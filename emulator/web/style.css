@@ -122,6 +122,30 @@ html, body {
   transition: top 0.08s ease;
 }
 
+/* ---- Jack-type legend (below the module) ---- */
+.legend {
+  width: min(520px, 46vw);      /* match the panel width */
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--strip);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.legend-title {
+  margin-bottom: 10px;
+  color: var(--muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.legend-item { display: flex; gap: 10px; margin-bottom: 8px; line-height: 1.35; }
+.legend-item:last-child { margin-bottom: 0; }
+.legend-item > div { color: var(--muted); }
+.legend-item b { color: var(--fg); font-weight: 600; }
+.swatch { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 4px; margin-top: 1px; }
+.swatch.cv { background: #4a90d9; }
+.swatch.gate { background: #c9a227; }
+.swatch.audio { background: #5cb85c; }
+.swatch.out { background: var(--accent); }
+
 /* ---- Host strip ---- */
 .host {
   flex: 1 1 auto;
@@ -207,6 +231,30 @@ html, body {
   border-radius: 5px; cursor: pointer;
 }
 .trig:active { background: var(--accent); }
+
+/* ---- Panel label editor ---- */
+.labels {
+  margin: 16px 24px 48px;
+  padding: 16px 18px;
+  background: var(--strip);
+  border-radius: 10px;
+}
+.lbl-grid { display: flex; flex-wrap: wrap; gap: 28px; }
+.lbl-group { min-width: 170px; }
+.lbl-group-title {
+  display: block; margin-bottom: 8px;
+  color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+}
+.lbl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lbl-row.lbl-head .lbl-col { width: 96px; color: var(--muted); font-size: 11px; }
+.lbl-key { width: 66px; flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.lbl-input {
+  width: 96px; font: inherit; font-size: 12px; padding: 3px 6px;
+  color: var(--fg); background: #00000040;
+  border: 1px solid #ffffff20; border-radius: 5px;
+}
+.lbl-input:focus { outline: none; border-color: var(--accent); }
+.lbl-na { width: 96px; text-align: center; color: var(--muted); }
 
 /* ---- Status bar ---- */
 .statusbar {

@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Ties emulator control ids to the panel art. Each value is the id of the",
+    "<tspan> in panel/Fox-Tail.svg whose text is that control's label. The SVG",
+    "is the source of truth for label text: the emulator reads labels from it,",
+    "and a rename rewrites the tspan (matched by id) then re-renders the PNG.",
+    "Renaming by tspan id (not text) avoids the duplicate-label ambiguity",
+    "(e.g. TIME/SPREAD/FEEDBACK appear in both the knob row and the jack row)."
+  ],
+
+  "sliders": {
+    "amp0": "tspan11124",
+    "amp1": "tspan11144",
+    "amp2": "tspan11164",
+    "amp3": "tspan11184",
+    "amp4": "tspan11204",
+    "amp5": "tspan11224",
+    "amp6": "tspan11244",
+    "amp7": "tspan11264",
+    "amp8": "tspan11284"
+  },
+
+  "pots": {
+    "_note": "One shared label (the 'PAN' bracket). Each pot's name is '<group> <column>', column taken from the slider label.",
+    "groupLabel": "tspan11331",
+    "ids": ["pan0", "pan1", "pan2", "pan3", "pan4", "pan5", "pan6", "pan7", "pan8"]
+  },
+
+  "knobs": {
+    "pitchHz": "tspan2577",
+    "spread": "tspan2624",
+    "feedback": "tspan2655",
+    "hpf": "tspan2686",
+    "lpf": "tspan2717"
+  },
+
+  "switches": {
+    "_note": "Each switch has two state labels [state0, state1].",
+    "fbMode": ["tspan4852", "tspan4872"],
+    "filterPos": ["tspan5659", "tspan5679"]
+  },
+
+  "cvInputs": {
+    "_note": "Slider CVs have no own SVG label -> '<slider label> CV'. Param CVs and the gate use the bottom jack labels.",
+    "sliderCvSuffix": "CV",
+    "params": {
+      "pitchHz": "tspan6539",
+      "spread": "tspan6398",
+      "feedback": "tspan1441",
+      "hpf": "tspan12420",
+      "lpf": "tspan14818"
+    },
+    "gate": "tspan6445"
+  },
+
+  "io": {
+    "inLeft": "tspan5244",
+    "inRight": "tspan6351",
+    "in": "tspan7342",
+    "outLeft": "tspan5244-8",
+    "outRight": "tspan6351-3",
+    "out": "tspan22114"
+  },
+
+  "panelText": {
+    "title": "tspan1704",
+    "subtitle": "tspan1786",
+    "credits": "tspan5403"
+  }
+}
