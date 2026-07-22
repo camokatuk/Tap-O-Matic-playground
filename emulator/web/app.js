@@ -32,6 +32,50 @@ function clearStatus() {
   statusbar.innerHTML = "&nbsp;";
 }
 
+// ---- Persistence: mirror control values into localStorage so they survive a
+// server restart (client-side; the SVG already persists label edits). ----
+const STORE_KEY = "foxtail-emu-state";
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch (_) { return {}; }
+}
+function saveVal(id, v) {
+  if (id.endsWith(".trig")) return; // momentary, don't persist
+  const s = loadStore();
+  s[id] = v;
+  localStorage.setItem(STORE_KEY, JSON.stringify(s));
+}
+const cssEsc = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s);
+
+// Apply persisted values to the UI + resend to the server. Called once, after
+// every control (panel + generated cards) exists.
+function restoreState() {
+  for (const [id, value] of Object.entries(loadStore())) {
+    // range input with data-id (panel/host sliders)
+    let el = document.querySelector(`input[type=range][data-id="${cssEsc(id)}"]`);
+    if (el) { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); continue; }
+    // knob / pot
+    el = document.querySelector(`.knob[data-id="${cssEsc(id)}"], .tiny-pot[data-id="${cssEsc(id)}"]`);
+    if (el && el._set) { el._set(value, false); continue; }
+    // switch
+    el = document.querySelector(`.switch[data-id="${cssEsc(id)}"]`);
+    if (el && el._apply) { el._apply(value, false); continue; }
+    // CV card param input (tagged with data-persist-id by labels.js)
+    el = document.querySelector(`[data-persist-id="${cssEsc(id)}"]`);
+    if (el) { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); continue; }
+    // source selection: "<target>.cv.src"
+    if (id.endsWith(".cv.src")) {
+      const target = id.slice(0, -7);
+      const card = document.querySelector(`.incard[data-wired-target="${cssEsc(target)}"]`);
+      const name = { 0: "off", 1: "osc", 2: "env" }[Math.round(value)];
+      const btn = card && card.querySelector(`.seg button[data-src="${name}"]`);
+      if (btn) btn.click();
+      continue;
+    }
+    send(id, value); // fallback: at least push it to the server
+  }
+}
+
 // Log <-> linear helpers for controls flagged data-log.
 function logMap(t, min, max) {
   // t in 0..1 -> value in [min,max] on a log scale
@@ -69,6 +113,7 @@ document.querySelectorAll('input[type="range"][data-id]').forEach((el) => {
   const emit = () => {
     const v = parseFloat(el.value);
     send(id, v);
+    saveVal(id, v);
     status(`${label}: ${fmt(v)}`);
     if (id === "pitchHz") mirrorFreq(v);
   };
@@ -145,6 +190,7 @@ function setKnobValue(knob, v, silent) {
   reflectMirror(knob, fmt(v));
   if (!silent) {
     if (!knob.dataset.unassigned) send(knob.dataset.id, v); // unwired -> UI only
+    saveVal(knob.dataset.id, v);
     status(`${knob.dataset.label || knob.dataset.id}: ${fmt(v)}`);
   }
 }
@@ -160,9 +206,11 @@ document.querySelectorAll(".switch").forEach((sw) => {
     reflectMirror(sw, states[v]);
     if (!silent) {
       if (!sw.dataset.unassigned) send(sw.dataset.id, v);
+      saveVal(sw.dataset.id, v);
       status(`${label}: ${states[v]}`);
     }
   };
+  sw._apply = apply;
   apply(parseInt(sw.dataset.value) || 0, true);
   sw.addEventListener("click", () => apply(1 - (parseInt(sw.dataset.value) || 0), false));
   sw.addEventListener("mouseenter", () =>

@@ -30,37 +30,44 @@ was tested and sounds worse); the excess coupling vs the original OAM Time
 Machine is a board-level hardware issue; a lightweight firmware reaches the
 hardware floor.
 
-## NEXT UP: additive sine oscillator firmware (planned, not started)
+## Fox Tail — additive oscillator firmware + emulator (in progress)
 
-Agreed plan: build an **alternative firmware** turning the module into an
-additive sine-wave oscillator, as a separate build target (e.g.
-`AdditiveOsc.cpp` + Makefile target) reusing `time_machine_hardware.*`
-untouched, so the delay firmware stays intact and both remain flashable.
+Second firmware turning the module into an additive sine oscillator. Full
+living doc: `docs/claude/oscillator-impl.md`. Must obey the noise budget
+(see whinebug.md): no external RAM, constant work per callback, block size ≤ 5,
+never read the audio input.
 
-Noise budget (from whinebug.md, all empirically validated):
-- No external-RAM usage at all.
-- Constant DSP work per callback; no periodic structure below the callback
-  rate.
-- Callback-rate spur placed high (block size ≤ 5 → ≥ 9.6 kHz).
-- Don't process/pass the audio input.
+**Build.** `make MODULE=foxtail` → `Fox-Tail.bin` (delay is default `make`).
+User builds/flashes firmware themselves.
 
-**Proposed control mapping — NOT yet reviewed with the user; discuss and
-agree on functionality/controls before writing code:**
+**Three-layer architecture** (the key idea — keep sources out of firmware):
+- `foxtail_dsp.h` (repo root): the shared, hardware-free DSP. **Must stay
+  C++14-safe** (firmware is `-std=gnu++14`; no `std::clamp`/`std::optional`).
+  `Controls` struct is the seam. `kNumHarmonics = 9` (9 sliders = 9 partials).
+- `FoxTail.cpp` (repo root): thin firmware — reads `time_machine_hardware.*`
+  into `Controls`, no source generators. Slider `h` = harmonic `h`
+  (`amp = clamp(slider + levelCV, 0..1)`); TIME knob = base pitch; V/OCT jack
+  (`TIME_CV`, analog) = pitch CV in octaves.
+- `emulator/` (native audio + web UI, **emulator-only sources**): run with
+  `./emulator/run.sh` → http://localhost:4343 (miniaudio→CoreAudio + cpp-httplib;
+  builds via clang++ with no cmake needed). `emulator/src/sources.h` =
+  `Envelope`/`Oscillator` (dev stand-ins for patched modules); the firmware
+  never includes it.
 
-| Hardware | Proposed role |
-|---|---|
-| 8 sliders + their CV ins | Amplitudes of harmonics 1–8 |
-| 9th slider (dry) + CV | Master level? (TBD) |
-| Time knob + Time CV | Pitch: coarse tune + 1V/oct tracking |
-| Spread knob + CV | Harmonic stretch/detune (organ → inharmonic/bell) |
-| Feedback knob + CV | TBD (e.g. global FM, drift, or wavefolding) |
-| Highpass/Lowpass knobs + CVs | Spectral tilt / brightness (TBD) |
-| 8 small pan pots | Per-harmonic stereo placement or fine detune (TBD) |
-| 2 switches | TBD (octave range, mono/stereo, quantize?) |
-| Gate/clock in | Sync or trigger (TBD) |
-| 9 LEDs | Per-harmonic level meters |
-| Audio out L/R | Oscillator output |
+**Modulation.** General `CvSource` per target (pitch + each slider): off/osc/env
++ depth. Slider CV sums into slider (clamped); pitch CV is octaves (`2^cv`). Osc
+is a bipolar sine LFO. Jack facts: analog CV jacks = TIME/SPREAD/FEEDBACK/HPF/LPF
+(pitch on TIME); **GATE jack is digital** (can't do analog CV).
 
-Open questions to settle with the user first: exact role of feedback/filter
-knobs, pan pots, switches, and the dry slider; whether pitch CV needs the
-existing calibration system; mono-vs-stereo philosophy.
+**Panel labels.** The SVG (`panel/Fox-Tail.svg`) is the source of truth.
+`emulator/controls.json` maps control id → `<tspan>` id. Edit labels live in the
+emulator UI (writes the SVG + re-renders). Regenerate the PNG with
+`python3 emulator/render_panel.py` (rsvg-convert + Futura font remap + autocrop);
+**never hand-edit `emulator/web/Fox-Tail.png`**. Emulator control state persists
+in the browser's localStorage.
+
+**Done:** additive osc (basic `std::sin` per partial, unoptimized), env+osc
+sources wired to pitch and to every slider CV (emulator + firmware).
+**Not done / open:** spread/feedback/hpf/lpf/GATE have no DSP function yet;
+final control map; osc CPU optimization; the new firmware paths are untested on
+hardware.

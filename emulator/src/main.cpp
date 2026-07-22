@@ -15,6 +15,7 @@
 #include "httplib.h"
 
 #include "foxtail_dsp.h" // the shared, hardware-free DSP (repo root)
+#include "sources.h"     // emulator-only modulation sources (envelopes, ...)
 
 #include <atomic>
 #include <cstdio>
@@ -32,13 +33,72 @@ namespace {
 constexpr int   kPort       = 4343;
 constexpr float kSampleRate = 48000.f;
 
-std::atomic<float> g_amp0{0.f};     // DRY slider -> harmonic 0 amplitude
-std::atomic<float> g_pitchHz{220.f}; // TIME knob -> fundamental frequency
-std::atomic<float> g_master{0.7f};   // host master volume
+// Map a normalized 0..1 knob to a time in seconds (1 ms .. 10 s, log law).
+static float normToSec(float v) { return 0.001f * std::pow(10000.f, v); }
 
-std::atomic<float> g_meter0{0.f}; // fed back to the UI for the LED
+constexpr float kPitchMaxOct = 4.f; // pitch-CV depth 1.0 -> +4 octaves
+
+// A modulation source feeding one CV target. Params are set by the HTTP thread
+// (atomics); the Envelope/Oscillator objects are advanced only by the audio
+// thread. These stand in for external modules patched into the CV jacks — they
+// exist ONLY in the emulator.
+struct CvSource {
+    std::atomic<int>   type{0};      // 0 off, 1 osc, 2 env
+    std::atomic<float> depth{0.f};   // 0..1
+    std::atomic<float> atk{0.05f};   // env attack  (normalized 0..1)
+    std::atomic<float> dec{0.40f};   // env decay   (normalized 0..1)
+    std::atomic<float> curve{0.f};   // env curve   (-1..1)
+    std::atomic<int>   trig{0};      // set 1 to fire the envelope
+    std::atomic<float> freq{1.f};    // osc frequency (Hz)
+    ftemu::Envelope    env;          // audio-thread only
+    ftemu::Oscillator  osc;          // audio-thread only
+
+    // Advance one block; return the source signal scaled by depth.
+    // (envelope is unipolar 0..1, oscillator bipolar -1..1.)
+    float run(float dt) {
+        const int t = type.load(std::memory_order_relaxed);
+        float sig = 0.f;
+        if (t == 2) {
+            env.attack = normToSec(atk.load(std::memory_order_relaxed));
+            env.decay  = normToSec(dec.load(std::memory_order_relaxed));
+            env.curve  = curve.load(std::memory_order_relaxed);
+            if (trig.exchange(0, std::memory_order_relaxed)) env.trigger();
+            sig = env.process(dt);
+        } else if (t == 1) {
+            osc.freq = freq.load(std::memory_order_relaxed);
+            sig = osc.process(dt);
+        }
+        return sig * depth.load(std::memory_order_relaxed);
+    }
+
+    // Route a "cv.<leaf>" parameter. Returns false if the leaf is unknown.
+    bool set(const std::string& leaf, float v) {
+        if (leaf == "cv.src")        { type.store((int)v, std::memory_order_relaxed);  return true; }
+        if (leaf == "cv.depth")      { depth.store(v, std::memory_order_relaxed);      return true; }
+        if (leaf == "cv.env.attack") { atk.store(v, std::memory_order_relaxed);        return true; }
+        if (leaf == "cv.env.decay")  { dec.store(v, std::memory_order_relaxed);        return true; }
+        if (leaf == "cv.env.curve")  { curve.store(v, std::memory_order_relaxed);      return true; }
+        if (leaf == "cv.env.trig")   { trig.store(1, std::memory_order_relaxed);       return true; }
+        if (leaf == "cv.osc.freq")   { freq.store(v, std::memory_order_relaxed);       return true; }
+        return false;
+    }
+};
+
+std::atomic<float> g_amp[foxtail::kNumHarmonics]; // per-harmonic slider base values
+std::atomic<float> g_pitchHz{220.f};              // TIME knob -> fundamental
+std::atomic<float> g_master{0.7f};                // host master volume
+
+CvSource g_srcAmp[foxtail::kNumHarmonics];        // per-slider CV source
+CvSource g_srcPitch;                              // pitch CV source
+
+std::atomic<float> g_meter0{0.f};                 // LED feedback for the UI
+std::atomic<float> g_pitchCvDbg{0.f};             // last pitch CV (octaves), /dbg
 
 foxtail::FoxTailOsc g_osc;
+
+static bool startsWith(const std::string& s, const char* p) {
+    return s.rfind(p, 0) == 0;
+}
 
 // Reusable per-channel scratch so we don't allocate in the audio callback.
 std::vector<float> g_scratchL;
@@ -53,10 +113,22 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         g_scratchR.resize(frameCount);
     }
 
+    const float dt = (float)frameCount / kSampleRate;
+
     foxtail::Controls c;
-    c.amp[0]  = g_amp0.load(std::memory_order_relaxed);
+    // Each slider: effective amplitude = clamp(base + its CV, 0..1). The CV
+    // routing is this single line per slider, so decoupling a slider from its
+    // CV later is trivial (drop/redirect the g_srcAmp[h] term).
+    for (int h = 0; h < foxtail::kNumHarmonics; ++h) {
+        float base = g_amp[h].load(std::memory_order_relaxed);
+        float amp  = base + g_srcAmp[h].run(dt);
+        c.amp[h]   = amp < 0.f ? 0.f : (amp > 1.f ? 1.f : amp);
+    }
+
     c.pitchHz = g_pitchHz.load(std::memory_order_relaxed);
+    c.pitchCv = g_srcPitch.run(dt) * kPitchMaxOct; // depth already applied
     c.master  = g_master.load(std::memory_order_relaxed);
+    g_pitchCvDbg.store(c.pitchCv, std::memory_order_relaxed);
 
     g_osc.Process(c, g_scratchL.data(), g_scratchR.data(), frameCount);
 
@@ -68,11 +140,25 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
     g_meter0.store(g_osc.Meter(0), std::memory_order_relaxed);
 }
 
-// Map a control id coming from the UI to its atomic. Returns false if unknown.
+// Map a UI control id to state. Ids are either a base value ("amp3", "pitchHz",
+// "master") or a per-target CV param ("amp3.cv.env.attack", "pitchHz.cv.src").
 bool setControl(const std::string& id, float value) {
-    if (id == "amp0")    { g_amp0.store(value, std::memory_order_relaxed);    return true; }
-    if (id == "pitchHz") { g_pitchHz.store(value, std::memory_order_relaxed); return true; }
     if (id == "master")  { g_master.store(value, std::memory_order_relaxed);  return true; }
+    if (id == "pitchHz") { g_pitchHz.store(value, std::memory_order_relaxed); return true; }
+
+    // Pitch CV: "pitchHz.cv.*"  (strip the "pitchHz." prefix -> "cv.<leaf>")
+    if (startsWith(id, "pitchHz.cv."))
+        return g_srcPitch.set(id.substr(8), value);
+
+    // Sliders: "ampN" or "ampN.cv.*"
+    if (startsWith(id, "amp")) {
+        size_t dot = id.find('.');
+        std::string head = (dot == std::string::npos) ? id : id.substr(0, dot);
+        int idx = std::atoi(head.c_str() + 3); // "amp3" -> 3
+        if (idx < 0 || idx >= foxtail::kNumHarmonics) return false; // slider w/o harmonic
+        if (dot == std::string::npos) { g_amp[idx].store(value, std::memory_order_relaxed); return true; }
+        return g_srcAmp[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
+    }
     return false;
 }
 
@@ -218,6 +304,13 @@ int main() {
     srv.Get("/meters", [](const httplib::Request&, httplib::Response& res) {
         char buf[64];
         std::snprintf(buf, sizeof(buf), "%.4f", g_meter0.load(std::memory_order_relaxed));
+        res.set_content(buf, "text/plain");
+    });
+
+    // Debug: current pitch-CV value in octaves (for verifying modulation).
+    srv.Get("/dbg", [](const httplib::Request&, httplib::Response& res) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "pitchCv=%.4f", g_pitchCvDbg.load(std::memory_order_relaxed));
         res.set_content(buf, "text/plain");
     });
 

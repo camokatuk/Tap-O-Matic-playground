@@ -15,7 +15,7 @@
 
 namespace foxtail {
 
-static constexpr int   kNumHarmonics = 8;
+static constexpr int   kNumHarmonics = 9; // one per slider (9 sliders = 9 LEDs)
 static constexpr float kTwoPi        = 6.283185307179586f;
 
 // Normalized control snapshot, filled once per audio block by the host
@@ -24,6 +24,7 @@ static constexpr float kTwoPi        = 6.283185307179586f;
 struct Controls {
     float amp[kNumHarmonics] = {0.f}; // per-harmonic amplitude, 0..1
     float pitchHz            = 220.f; // fundamental frequency in Hz
+    float pitchCv            = 0.f;   // pitch modulation, in OCTAVES (0 = none)
     float master             = 0.7f;  // master output level, 0..1
 };
 
@@ -50,10 +51,12 @@ class FoxTailOsc {
     // branching in the hot loop (noise-budget rule from whinebug.md).
     void Process(const Controls& c, float* outL, float* outR, size_t frames) {
         // Precompute per-harmonic phase increments (frequency changes are
-        // click-free, so no smoothing needed on these).
+        // click-free, so no smoothing needed on these). Pitch CV shifts the
+        // fundamental by whole octaves via 2^cv.
+        const float f0 = c.pitchHz * std::exp2(c.pitchCv);
         float inc[kNumHarmonics];
         for (int h = 0; h < kNumHarmonics; ++h)
-            inc[h] = (c.pitchHz * (h + 1)) / sampleRate_; // harmonic h -> (h+1)*f0
+            inc[h] = (f0 * (h + 1)) / sampleRate_; // harmonic h -> (h+1)*f0
 
         for (size_t i = 0; i < frames; ++i) {
             // Ramp the master gain toward its target, once per sample.

@@ -24,13 +24,15 @@ using namespace oam::time_machine;
 // --- Milestone 1 control mapping -------------------------------------------
 // DRY slider  -> amplitude of one sine (harmonic 1).
 // TIME knob   -> its frequency, 20..2000 Hz on a log law.
+// V/OCT jack  -> pitch modulation (patch an external envelope/CV here to test).
 // Everything else on the panel is unused for now.
 static constexpr float kFreqMin = 20.0f;
 static constexpr float kFreqMax = 2000.0f;
 static constexpr float kMaster  = 0.7f;
+static constexpr float kPitchCvOctaves = 5.0f; // V/OCT jack full-scale -> ±octaves
 
 TimeMachineHardware hw;
-Led                 leds[foxtail::kNumHarmonics + 1]; // DRY + 8
+Led                 leds[foxtail::kNumHarmonics]; // one LED per harmonic (9)
 foxtail::FoxTailOsc osc;
 foxtail::Controls   controls;
 
@@ -47,13 +49,22 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
 {
     hw.ProcessAllControls();
 
-    // Slider/knob values arrive normalized (0..1). The '1.0 - x' matches the
-    // panel orientation the delay firmware uses (up = more, CCW = less).
-    controls.amp[0]  = clampf(1.0f - hw.GetLevelSlider(0), 0.0f, 1.0f);
+    // Each harmonic: effective amplitude = clamp(slider + its level CV, 0..1).
+    // Slider values arrive normalized (0..1); the '1.0 - x' matches the panel
+    // orientation (up = more). Level CVs are bipolar (-1..1).
+    for (int h = 0; h < foxtail::kNumHarmonics; ++h)
+    {
+        float base = 1.0f - hw.GetLevelSlider(h);
+        controls.amp[h] = clampf(base + hw.GetLevelCV(h), 0.0f, 1.0f);
+    }
 
     float t          = clampf(1.0f - hw.GetTimeKnob(), 0.0f, 1.0f);
     controls.pitchHz = kFreqMin * powf(kFreqMax / kFreqMin, t); // log sweep
     controls.master  = kMaster;
+
+    // V/OCT jack (the analog TIME_CV input) -> pitch modulation in octaves.
+    // Uncalibrated: an unpatched jack may read slightly off-zero.
+    controls.pitchCv = hw.GetAdcValue(TIME_CV) * kPitchCvOctaves;
 
     osc.Process(controls, out[0], out[1], size);
 }
@@ -87,11 +98,10 @@ int main(void)
         uint32_t now = System::GetNow();
         if (now - last_led_ms >= 1)
         {
-            // v1: single partial — show its level on the DRY LED, rest off.
-            for (int i = 0; i < foxtail::kNumHarmonics + 1; i++)
+            // Each LED shows its harmonic's level.
+            for (int i = 0; i < foxtail::kNumHarmonics; i++)
             {
-                float level = (i == 0) ? osc.Meter(0) : 0.0f;
-                leds[i].Set(level);
+                leds[i].Set(osc.Meter(i));
                 leds[i].Update();
             }
             last_led_ms = now;

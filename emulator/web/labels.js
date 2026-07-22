@@ -51,6 +51,20 @@
     document.querySelectorAll("#slider-cv-cards .incard-title").forEach((el, i) => {
       if (cols[i] !== undefined) el.textContent = `${cols[i]} CV`;
     });
+
+    // Param-CV card titles/targets track the jack + knob labels.
+    const cvCards = document.querySelectorAll("#cv-cards .incard");
+    const params = Object.keys(CTRL.knobs);
+    params.forEach((param, i) => {
+      const card = cvCards[i];
+      if (!card) return;
+      const jackT = CTRL.cvInputs.params[param];
+      card.querySelector(".incard-title").textContent = jackT ? `${labelOf(jackT)} CV` : `${param} CV`;
+      const note = card.querySelector(".incard-target");
+      if (note) note.textContent = `→ ${labelOf(CTRL.knobs[param])}`;
+    });
+    const gateCard = cvCards[params.length];
+    if (gateCard) gateCard.querySelector(".incard-title").textContent = labelOf(CTRL.cvInputs.gate);
   }
 
   function reloadPanel() {
@@ -150,13 +164,15 @@
     box.append(grid);
   }
 
-  // ---- Slider-CV panel (design preview: depth + Off/Osc/Env source) ----
-  function rangeCtl(text, min, max, step, value, valText) {
+  // ---- CV source cards (depth + Off/Osc/Env). The pitch card is wired to
+  //      the emulator; the rest are design preview. ----
+  function rangeCtl(role, text, min, max, step, value, valText) {
     const lab = document.createElement("label");
     lab.textContent = text;
     const inp = document.createElement("input");
     inp.type = "range";
     inp.min = min; inp.max = max; inp.step = step; inp.value = value;
+    if (role) inp.dataset.role = role;
     const r = rowEl("ctl", lab, inp);
     if (valText !== undefined) r.append(span("val", valText));
     return r;
@@ -177,20 +193,30 @@
     );
     return rowEl("ctl", lab, seg);
   }
-  function sliderCvCard(title) {
+
+  // ms/s label for a normalized 0..1 time knob (matches the emulator's mapping).
+  function secText(v) {
+    const s = 0.001 * Math.pow(10000, v);
+    return s < 1 ? `${Math.round(s * 1000)} ms` : `${s.toFixed(2)} s`;
+  }
+  const curveText = (v) => (v < -0.1 ? "log" : v > 0.1 ? "exp" : "lin");
+
+  function makeCard({ title, note, target, wired }) {
     const card = rowEl("incard");
     card.dataset.source = "off";
-    card.append(rowEl("incard-top", span("incard-title", title)));
-    card.append(rangeCtl("Depth", 0, 1, 0.01, 0.5));
+    const top = rowEl("incard-top", span("incard-title", title));
+    if (note) top.append(span("incard-target", note));
+    card.append(top);
+    card.append(rangeCtl("depth", "Depth", 0, 1, 0.01, 0.5));
     card.append(segCtl());
 
-    const osc = rowEl("src src-osc", rangeCtl("Frequency", 0.02, 20, 0.01, 1, "1.00 Hz"));
+    const osc = rowEl("src src-osc", rangeCtl("freq", "Frequency", 0.02, 20, 0.01, 1, "1.00 Hz"));
     osc.hidden = true;
     const env = rowEl(
       "src src-env",
-      rangeCtl("Attack", 0, 1, 0.001, 0.1, "10 ms"),
-      rangeCtl("Decay", 0, 1, 0.001, 0.4, "200 ms"),
-      rangeCtl("Curve", -1, 1, 0.01, 0, "lin")
+      rangeCtl("atk", "Attack", 0, 1, 0.001, 0.05, secText(0.05)),
+      rangeCtl("dec", "Decay", 0, 1, 0.001, 0.4, secText(0.4)),
+      rangeCtl("curve", "Curve", -1, 1, 0.01, 0, "lin")
     );
     env.hidden = true;
     const trig = document.createElement("button");
@@ -198,17 +224,75 @@
     trig.textContent = "Trigger";
     env.append(trig);
     card.append(osc, env);
+
+    if (wired && target) wireCard(card, target);
     return card;
   }
+
+  // Wire a card's controls to the emulator (id scheme "<target>.cv.*").
+  function wireCard(card, target) {
+    card.dataset.wiredTarget = target;
+    const idFor = {
+      depth: `${target}.cv.depth`,
+      atk: `${target}.cv.env.attack`,
+      dec: `${target}.cv.env.decay`,
+      curve: `${target}.cv.env.curve`,
+      freq: `${target}.cv.osc.freq`,
+    };
+    card.querySelectorAll("input[type=range]").forEach((inp) => {
+      const id = idFor[inp.dataset.role];
+      if (!id) return;
+      inp.dataset.persistId = id; // so restoreState can find it
+      inp.addEventListener("input", () => {
+        const v = parseFloat(inp.value);
+        const val = inp.parentElement.querySelector(".val");
+        send(id, v);
+        saveVal(id, v);
+        if (val) {
+          if (inp.dataset.role === "atk" || inp.dataset.role === "dec") val.textContent = secText(v);
+          else if (inp.dataset.role === "curve") val.textContent = curveText(v);
+          else if (inp.dataset.role === "freq") val.textContent = `${v.toFixed(2)} Hz`;
+        }
+      });
+    });
+    const trig = card.querySelector(".trig");
+    if (trig) trig.addEventListener("click", () => send(`${target}.cv.env.trig`, 1));
+  }
+
+  // Main CV panel: one card per param jack (+ GATE). Pitch is wired.
+  function buildParamCards() {
+    const box = document.getElementById("cv-cards");
+    if (!box) return;
+    box.innerHTML = "";
+    Object.keys(CTRL.knobs).forEach((param) => {
+      const jackT = CTRL.cvInputs.params[param];
+      box.append(makeCard({
+        title: jackT ? `${labelOf(jackT)} CV` : `${param} CV`,
+        note: `→ ${labelOf(CTRL.knobs[param])}`,
+        target: param,
+        wired: param === "pitchHz",
+      }));
+    });
+    // GATE jack (digital) — design placeholder.
+    const gate = rowEl("incard is-empty",
+      rowEl("incard-top", span("incard-title", labelOf(CTRL.cvInputs.gate)),
+            span("incard-target", "→ sync/trig")),
+      span("src-empty", "digital gate — TBD"));
+    box.append(gate);
+  }
+
   function buildSliderCvCards() {
     const box = document.getElementById("slider-cv-cards");
     if (!box) return;
     box.innerHTML = "";
-    Object.values(CTRL.sliders).forEach((t) =>
-      box.append(sliderCvCard(`${labelOf(t)} CV`))
+    // Each slider's CV sums into that slider's value (clamped) — target is the
+    // slider id ("ampN"), so it's wired to the same target the panel slider uses.
+    Object.entries(CTRL.sliders).forEach(([id, t]) =>
+      box.append(makeCard({ title: `${labelOf(t)} CV`, target: id, wired: true }))
     );
   }
-  // One delegated handler drives every Off/Osc/Env picker (both input panels).
+
+  // One delegated handler drives every Off/Osc/Env picker (all cards).
   function attachSegHandler() {
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".seg button[data-src]");
@@ -222,6 +306,11 @@
       card.querySelectorAll(".src").forEach((s) => {
         s.hidden = !s.classList.contains("src-" + btn.dataset.src);
       });
+      if (card.dataset.wiredTarget) {
+        const v = { off: 0, osc: 1, env: 2 }[btn.dataset.src];
+        send(`${card.dataset.wiredTarget}.cv.src`, v);
+        saveVal(`${card.dataset.wiredTarget}.cv.src`, v);
+      }
     });
   }
 
@@ -230,9 +319,11 @@
       CTRL = await (await fetch("controls.json")).json();
       await fetchSvgLabels();
       buildEditor();
+      buildParamCards();
       buildSliderCvCards();
       attachSegHandler();
       applyLabels();
+      restoreState(); // reapply persisted control values (survives restarts)
     } catch (e) {
       console.error("labels.js: failed to load labels", e);
     }
