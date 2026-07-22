@@ -22,9 +22,10 @@ struct Envelope {
     // These are in SECONDS. The emulator overwrites them each block from the
     // UI, whose sliders are a normalized 0..1 position mapped by normToSec()
     // (0->1ms, 1->10s). So a UI value of 0.4 becomes ~0.04 s here, NOT 0.4 s.
-    float attack = 0.002f;   // seconds
-    float decay  = 0.040f;   // seconds
-    float curve  = 0.f;      // -1..+1
+    float attack  = 0.002f;  // seconds
+    float decay   = 0.040f;  // seconds
+    float curve   = 0.f;     // -1..+1
+    bool  cycling = false;   // loop attack->decay->attack instead of stopping
 
     void trigger() { stage = Attack; phase = 0.f; }
 
@@ -34,7 +35,10 @@ struct Envelope {
             if (phase >= 1.f) { phase = 0.f; stage = Decay; }
         } else if (stage == Decay) {
             phase += dt / std::max(decay, 1e-4f);
-            if (phase >= 1.f) { phase = 1.f; stage = Idle; }
+            if (phase >= 1.f) {
+                if (cycling) { phase = 0.f; stage = Attack; } // loop
+                else         { phase = 1.f; stage = Idle; }
+            }
         }
 
         // Linear 0..1 level for the current stage (attack rises, decay falls).

@@ -47,6 +47,22 @@ function saveVal(id, v) {
 }
 const cssEsc = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s);
 
+// Shared DOM builders (used by the label editor and the source cards) and the
+// cross-file namespace (FT.model is set by labels.js; FT.sources by sources.js).
+function span(cls, text) {
+  const s = document.createElement("span");
+  s.className = cls;
+  if (text !== undefined) s.textContent = text;
+  return s;
+}
+function rowEl(cls, ...kids) {
+  const d = document.createElement("div");
+  d.className = cls;
+  kids.forEach((k) => k && d.append(k));
+  return d;
+}
+window.FT = window.FT || {};
+
 // Apply persisted values to the UI + resend to the server. Called once, after
 // every control (panel + generated cards) exists.
 function restoreState() {
@@ -60,9 +76,13 @@ function restoreState() {
     // switch
     el = document.querySelector(`.switch[data-id="${cssEsc(id)}"]`);
     if (el && el._apply) { el._apply(value, false); continue; }
-    // CV card param input (tagged with data-persist-id by labels.js)
+    // CV card param input (tagged with data-persist-id by sources.js)
     el = document.querySelector(`[data-persist-id="${cssEsc(id)}"]`);
-    if (el) { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); continue; }
+    if (el) {
+      if (el.type === "checkbox") { el.checked = !!value; el.dispatchEvent(new Event("change", { bubbles: true })); }
+      else { el.value = value; el.dispatchEvent(new Event("input", { bubbles: true })); }
+      continue;
+    }
     // source selection: "<target>.cv.src"
     if (id.endsWith(".cv.src")) {
       const target = id.slice(0, -7);

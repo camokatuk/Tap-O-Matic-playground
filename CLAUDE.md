@@ -52,7 +52,11 @@ User builds/flashes firmware themselves.
   `./emulator/run.sh` → http://localhost:4343 (miniaudio→CoreAudio + cpp-httplib;
   builds via clang++ with no cmake needed). `emulator/src/sources.h` =
   `Envelope`/`Oscillator` (dev stand-ins for patched modules); the firmware
-  never includes it.
+  never includes it. Web UI JS is split by theme (user prefers small, focused
+  files — keep it that way): `app.js` (core glue + panel controls +
+  persistence), `sources.js` (CV source cards; all slider ranges live in its
+  `RANGES` object), `labels.js` (label model + editor); shared via a small `FT`
+  namespace + global `send`/`saveVal`/`span`/`rowEl`.
 
 **Modulation.** General `CvSource` per target (pitch + each slider): off/osc/env
 + depth. Slider CV sums into slider (clamped); pitch CV is octaves (`2^cv`). Osc

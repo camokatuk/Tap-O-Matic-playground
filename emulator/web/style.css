@@ -231,6 +231,10 @@ html, body {
   border-radius: 5px; cursor: pointer;
 }
 .trig:active { background: var(--accent); }
+.incard .ctl input.cycle-box {
+  flex: 0 0 auto; width: auto; margin-right: auto;
+  accent-color: var(--accent); cursor: pointer;
+}
 
 /* ---- Panel label editor ---- */
 .labels {

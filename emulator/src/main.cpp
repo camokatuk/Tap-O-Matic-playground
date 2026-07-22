@@ -43,15 +43,17 @@ constexpr float kPitchMaxOct = 4.f; // pitch-CV depth 1.0 -> +4 octaves
 // thread. These stand in for external modules patched into the CV jacks — they
 // exist ONLY in the emulator.
 struct CvSource {
-    std::atomic<int>   type{0};      // 0 off, 1 osc, 2 env
-    std::atomic<float> depth{0.f};   // 0..1
-    std::atomic<float> atk{0.05f};   // env attack  (normalized 0..1)
-    std::atomic<float> dec{0.40f};   // env decay   (normalized 0..1)
-    std::atomic<float> curve{0.f};   // env curve   (-1..1)
-    std::atomic<int>   trig{0};      // set 1 to fire the envelope
-    std::atomic<float> freq{1.f};    // osc frequency (Hz)
-    ftemu::Envelope    env;          // audio-thread only
-    ftemu::Oscillator  osc;          // audio-thread only
+    std::atomic<int>   type{0};        // 0 off, 1 osc, 2 env
+    std::atomic<float> depth{0.f};     // 0..1
+    std::atomic<float> atk{0.05f};     // env attack  (normalized 0..1)
+    std::atomic<float> dec{0.40f};     // env decay   (normalized 0..1)
+    std::atomic<float> curve{0.f};     // env curve   (-1..1)
+    std::atomic<int>   cycle{0};       // env: loop instead of one-shot
+    std::atomic<int>   trig{0};        // set 1 to fire the envelope
+    std::atomic<float> oscCoarse{0.f}; // osc coarse freq (0..20000 Hz)
+    std::atomic<float> oscFine{1.f};   // osc fine freq   (0.02..20 Hz)
+    ftemu::Envelope    env;            // audio-thread only
+    ftemu::Oscillator  osc;            // audio-thread only
 
     // Advance one block; return the source signal scaled by depth.
     // (envelope is unipolar 0..1, oscillator bipolar -1..1.)
@@ -59,13 +61,18 @@ struct CvSource {
         const int t = type.load(std::memory_order_relaxed);
         float sig = 0.f;
         if (t == 2) {
-            env.attack = normToSec(atk.load(std::memory_order_relaxed));
-            env.decay  = normToSec(dec.load(std::memory_order_relaxed));
-            env.curve  = curve.load(std::memory_order_relaxed);
+            env.attack  = normToSec(atk.load(std::memory_order_relaxed));
+            env.decay   = normToSec(dec.load(std::memory_order_relaxed));
+            env.curve   = curve.load(std::memory_order_relaxed);
+            env.cycling = cycle.load(std::memory_order_relaxed) != 0;
+            if (env.cycling && env.stage == ftemu::Envelope::Idle) env.trigger();
             if (trig.exchange(0, std::memory_order_relaxed)) env.trigger();
             sig = env.process(dt);
         } else if (t == 1) {
-            osc.freq = freq.load(std::memory_order_relaxed);
+            // Coarse + fine frequency, summed and clamped to the audio range.
+            float f = oscCoarse.load(std::memory_order_relaxed)
+                    + oscFine.load(std::memory_order_relaxed);
+            osc.freq = f < 0.f ? 0.f : (f > 20000.f ? 20000.f : f);
             sig = osc.process(dt);
         }
         return sig * depth.load(std::memory_order_relaxed);
@@ -73,13 +80,15 @@ struct CvSource {
 
     // Route a "cv.<leaf>" parameter. Returns false if the leaf is unknown.
     bool set(const std::string& leaf, float v) {
-        if (leaf == "cv.src")        { type.store((int)v, std::memory_order_relaxed);  return true; }
-        if (leaf == "cv.depth")      { depth.store(v, std::memory_order_relaxed);      return true; }
-        if (leaf == "cv.env.attack") { atk.store(v, std::memory_order_relaxed);        return true; }
-        if (leaf == "cv.env.decay")  { dec.store(v, std::memory_order_relaxed);        return true; }
-        if (leaf == "cv.env.curve")  { curve.store(v, std::memory_order_relaxed);      return true; }
-        if (leaf == "cv.env.trig")   { trig.store(1, std::memory_order_relaxed);       return true; }
-        if (leaf == "cv.osc.freq")   { freq.store(v, std::memory_order_relaxed);       return true; }
+        if (leaf == "cv.src")         { type.store((int)v, std::memory_order_relaxed);   return true; }
+        if (leaf == "cv.depth")       { depth.store(v, std::memory_order_relaxed);       return true; }
+        if (leaf == "cv.env.attack")  { atk.store(v, std::memory_order_relaxed);         return true; }
+        if (leaf == "cv.env.decay")   { dec.store(v, std::memory_order_relaxed);         return true; }
+        if (leaf == "cv.env.curve")   { curve.store(v, std::memory_order_relaxed);       return true; }
+        if (leaf == "cv.env.cycle")   { cycle.store((int)v, std::memory_order_relaxed);  return true; }
+        if (leaf == "cv.env.trig")    { trig.store(1, std::memory_order_relaxed);        return true; }
+        if (leaf == "cv.osc.coarse")  { oscCoarse.store(v, std::memory_order_relaxed);   return true; }
+        if (leaf == "cv.osc.fine")    { oscFine.store(v, std::memory_order_relaxed);     return true; }
         return false;
     }
 };
