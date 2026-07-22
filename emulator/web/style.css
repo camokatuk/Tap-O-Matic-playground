@@ -1,0 +1,222 @@
+:root {
+  --bg: #14161a;
+  --fg: #e7e9ee;
+  --muted: #8b93a3;
+  --accent: #d8623a; /* Tap-O-Matic red-ish */
+  --strip: #1e2229;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app {
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  padding-bottom: 56px; /* room for status bar */
+  align-items: flex-start;
+}
+
+/* ---- The module (panel photo + overlaid controls) ---- */
+.module { flex: 0 0 auto; }
+
+.panel {
+  position: relative;
+  width: min(520px, 46vw);
+  aspect-ratio: 1161 / 1226; /* Fox-Tail.png, cropped tight to the panel */
+  background: url("Fox-Tail.png") center / contain no-repeat;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Controls positioned over the panel. left/top set inline per control. */
+.panel .vslider,
+.panel .knob, .panel .tiny-pot, .panel .switch { position: absolute; transform: translate(-50%, 0); }
+
+/* Vertical slider drawn over a real panel slider. */
+.vslider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;               /* thickness; rotated so this is the visual width */
+  writing-mode: vertical-lr;
+  direction: rtl;            /* up = max */
+  background: transparent;
+  cursor: pointer;
+}
+.vslider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 14px;
+  border-radius: 3px;
+  background: var(--accent);
+  border: 1px solid #00000066;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* Knob overlay: a draggable disc (drag up/down). */
+.knob {
+  width: 10%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  cursor: ns-resize;
+  background-color: #403c3c;
+  /* subtle ring so you can see where it is; the photo shows the real knob */
+  box-shadow: inset 0 0 0 2px #000000ff, 0 0 0 2px #00000000;
+}
+.knob::after { /* pointer indicator */
+  content: "";
+  position: absolute;
+  left: 50%; top: 18%;
+  width: 3px; height: 33%;
+  background: var(--accent);
+  transform-origin: bottom center;
+  transform: translateX(-50%) rotate(var(--angle, 0deg));
+  border-radius: 2px;
+}
+
+/* Tiny pot overlay: a draggable disc (drag up/down). */
+.tiny-pot {
+  width: 7%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  cursor: ns-resize;
+  background-color: #403c3c;
+  /* subtle ring so you can see where it is; the photo shows the real knob */
+  box-shadow: inset 0 0 0 1px #000000ff, 0 0 0 1px #00000000;
+}
+.tiny-pot::after { /* pointer indicator */
+  content: "";
+  position: absolute;
+  left: 50%; top: 18%;
+  width: 3px; height: 33%;
+  background: var(--accent);
+  transform-origin: bottom center;
+  transform: translateX(-50%) rotate(var(--angle, 0deg));
+  border-radius: 2px;
+}
+
+/* Two-position switch overlay (click to toggle). */
+.switch {
+  width: 4.5%;
+  aspect-ratio: 1 / 1.6;
+  border-radius: 6px;
+  background: #2a2626;
+  box-shadow: inset 0 0 0 1px #000;
+  cursor: pointer;
+}
+.switch::after { /* the moving nub */
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 74%; aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateX(-50%);
+  top: calc(6% + var(--pos, 0) * 42%);   /* 0 -> up, 1 -> down */
+  transition: top 0.08s ease;
+}
+
+/* ---- Host strip ---- */
+.host {
+  flex: 1 1 auto;
+  max-width: 320px;
+  background: var(--strip);
+  border-radius: 10px;
+  padding: 18px;
+}
+.host h1 { margin: 0 0 16px; font-size: 18px; }
+.host h1 span { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+.strip { margin-bottom: 18px; }
+.strip label {
+  display: block; margin-bottom: 6px;
+  color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+}
+.hslider { width: 100%; accent-color: var(--accent); cursor: pointer; }
+.readout { margin-top: 4px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.led { width: 22px; height: 22px; }
+.led i {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: #400; box-shadow: 0 0 2px #000 inset;
+}
+
+.hint { color: var(--muted); font-size: 12px; margin-top: 24px; }
+
+/* Unassigned controls: auto-generated label + live value rows. */
+.unassigned { display: flex; flex-direction: column; gap: 3px; }
+.uctl {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 3px 8px; border-radius: 5px; background: #00000030;
+  font-size: 12px;
+}
+.uctl-label { color: var(--muted); }
+.uctl-val { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* ---- CV input sources panel (design preview) ---- */
+.inputs {
+  margin: 8px 24px 0;
+  padding: 16px 18px;
+  background: var(--strip);
+  border-radius: 10px;
+}
+.inputs-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.inputs-head h2 { margin: 0; font-size: 15px; }
+.badge {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--accent); border: 1px solid var(--accent); opacity: .8;
+  border-radius: 999px; padding: 2px 8px;
+}
+.inputs .incard-row { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 4px; }
+.incard {
+  flex: 0 0 220px;
+  background: #00000030;
+  border: 1px solid #ffffff10;
+  border-radius: 8px;
+  padding: 12px;
+}
+.incard.is-empty { opacity: .6; }
+.incard-top { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.incard-title { font-weight: 600; }
+.incard-target { color: var(--muted); font-size: 12px; }
+.incard .ctl { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.incard .ctl label { width: 62px; color: var(--muted); font-size: 12px; flex: 0 0 auto; }
+.incard .ctl input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }
+.incard .ctl .val {
+  width: 48px; text-align: right; color: var(--muted);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.incard .src { margin-top: 10px; padding-top: 10px; border-top: 1px solid #ffffff10; }
+.incard .src-empty { color: var(--muted); font-size: 12px; font-style: italic; padding: 6px 0; }
+.seg { display: flex; gap: 4px; }
+.seg button {
+  flex: 1 1 auto; font: inherit; font-size: 12px; padding: 3px 6px;
+  color: var(--muted); background: #00000040; border: 1px solid #ffffff14;
+  border-radius: 5px; cursor: pointer;
+}
+.seg button.on { color: #fff; background: var(--accent); border-color: transparent; }
+.trig {
+  width: 100%; margin-top: 6px; font: inherit; font-size: 12px; padding: 5px;
+  color: var(--fg); background: #00000040; border: 1px solid var(--accent);
+  border-radius: 5px; cursor: pointer;
+}
+.trig:active { background: var(--accent); }
+
+/* ---- Status bar ---- */
+.statusbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 32px;
+  display: flex; align-items: center;
+  padding: 0 16px;
+  background: #0c0d10;
+  border-top: 1px solid #ffffff14;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

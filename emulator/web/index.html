@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fox Tail — emulator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- The module: Fox-Tail.png panel with interactive controls overlaid.
+         The PNG is cropped tight to the panel (1161 x 1226), so 0%/100% =
+         panel edges. Positions are percentages of the panel, so they scale
+         with it. Tweak left/top/height/width in the style below to nudge a
+         control over its real panel location.
+         (PNG is rendered from panel/Fox-Tail.svg — if the panel art changes,
+         regenerate with:  python3 emulator/render_panel.py) -->
+    <div class="module">
+      <div class="panel" id="panel">
+
+        <!-- LEVEL SLIDERS (DRY + 8) -> harmonic amplitudes.
+             The 9 column x-positions below are reused by the pots. -->
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp0" data-label="Level 1 (DRY)" style="left:6.4%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp1" data-label="Level 2" style="left:17.3%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp2" data-label="Level 3" style="left:28.2%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp3" data-label="Level 4" style="left:39.1%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp4" data-label="Level 5" style="left:50.0%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp5" data-label="Level 6" style="left:60.7%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp6" data-label="Level 7" style="left:71.5%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp7" data-label="Level 8" style="left:82.4%; top:22%; height:28%;" />
+        <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
+               data-id="amp8" data-label="Level 9" style="left:93.1%; top:22%; height:28%;" />
+
+        <!-- TINY POTS (BAL / pan row) — aligned to the slider columns above. -->
+        <div class="tiny-pot" data-id="pan0" data-unassigned data-label="BAL DRY"
+             data-min="-1" data-max="1" data-value="0" style="left:6.4%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan1" data-unassigned data-label="BAL 1"
+             data-min="-1" data-max="1" data-value="0" style="left:17.3%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan2" data-unassigned data-label="BAL 2"
+             data-min="-1" data-max="1" data-value="0" style="left:28.2%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan3" data-unassigned data-label="BAL 3"
+             data-min="-1" data-max="1" data-value="0" style="left:39.1%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan4" data-unassigned data-label="BAL 4"
+             data-min="-1" data-max="1" data-value="0" style="left:50.0%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan5" data-unassigned data-label="BAL 5"
+             data-min="-1" data-max="1" data-value="0" style="left:60.7%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan6" data-unassigned data-label="BAL 6"
+             data-min="-1" data-max="1" data-value="0" style="left:71.5%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan7" data-unassigned data-label="BAL 7"
+             data-min="-1" data-max="1" data-value="0" style="left:82.4%; top:54%;"></div>
+        <div class="tiny-pot" data-id="pan8" data-unassigned data-label="BAL 8"
+             data-min="-1" data-max="1" data-value="0" style="left:93.1%; top:54%;"></div>
+
+        <!-- LARGER KNOBS. TIME is wired (fundamental); the rest are unassigned. -->
+        <div class="knob" data-id="pitchHz" data-label="TIME (frequency)"
+             data-min="20" data-max="2000" data-log="1" data-value="220"
+             style="left:11%; top:66%;"></div>
+        <div class="knob" data-id="spread" data-unassigned data-label="SPREAD"
+             data-min="0" data-max="1" data-value="0" style="left:30.5%; top:66%;"></div>
+        <div class="knob" data-id="feedback" data-unassigned data-label="FEEDBACK"
+             data-min="0" data-max="1" data-value="0" style="left:50%; top:66%;"></div>
+        <div class="knob" data-id="hpf" data-unassigned data-label="HIGHPASS"
+             data-min="0" data-max="1" data-value="0" style="left:69.5%; top:66%;"></div>
+        <div class="knob" data-id="lpf" data-unassigned data-label="LOWPASS"
+             data-min="0" data-max="1" data-value="0" style="left:89%; top:66%;"></div>
+
+        <!-- SWITCHES (two-position). Positioned roughly over the panel toggles. -->
+        <div class="switch" data-id="fbMode" data-unassigned
+             data-label="Feedback mode" data-states="ALL,TAP 8" data-value="0"
+             style="left:20.85%; top:71.3%;"></div>
+        <div class="switch" data-id="filterPos" data-unassigned
+             data-label="Filter position" data-states="PRE,POST" data-value="0"
+             style="left:79.7%; top:71.3%;"></div>
+      </div>
+    </div>
+
+    <!-- Host-only controls (not on the hardware): styled separately. -->
+    <aside class="host">
+      <h1>Fox Tail <span>emulator</span></h1>
+
+      <section class="strip">
+        <label>Master volume</label>
+        <input class="hslider" type="range" min="0" max="1" step="0.001" value="0.7"
+               data-id="master" data-label="Master volume" />
+      </section>
+
+      <section class="strip">
+        <label>Fundamental</label>
+        <input class="hslider" type="range" min="20" max="2000" step="1" value="220"
+               data-id="pitchHz" data-label="Fundamental frequency" data-mirror="1" />
+        <div class="readout"><span id="freq-readout">220</span> Hz</div>
+      </section>
+
+      <section class="strip">
+        <label>Harmonic 1 (LED)</label>
+        <div class="led"><i id="led0"></i></div>
+      </section>
+
+      <section class="strip">
+        <label>Unassigned controls (not wired)</label>
+        <div id="unassigned" class="unassigned"></div>
+      </section>
+
+      <p class="hint">Milestone 1: DRY slider = amplitude of one sine, TIME = its
+      frequency. Unassigned controls above are live in the UI but not yet mapped
+      to the DSP.</p>
+    </aside>
+  </div>
+
+  <!-- ===================================================================
+       CV INPUT SOURCES — design preview only. Nothing here is wired to the
+       audio engine yet; it's a mock of the intended layout. Each card is one
+       CV jack with a depth + a modulation source (oscillator or envelope).
+       =================================================================== -->
+  <section class="inputs">
+    <div class="inputs-head">
+      <h2>CV Input Sources</h2>
+      <span class="badge">design preview — not wired</span>
+    </div>
+
+    <div class="incard-row">
+
+      <!-- Oscillator source example -->
+      <div class="incard">
+        <div class="incard-top">
+          <span class="incard-title">Input 1</span>
+          <span class="incard-target">→ TIME</span>
+        </div>
+        <div class="ctl">
+          <label>Depth</label>
+          <input type="range" min="0" max="1" step="0.01" value="0.5" />
+        </div>
+        <div class="ctl">
+          <label>Source</label>
+          <div class="seg"><button class="on">Osc</button><button>Env</button></div>
+        </div>
+        <div class="src">
+          <div class="ctl">
+            <label>Frequency</label>
+            <input type="range" min="0.02" max="20" step="0.01" value="1" />
+            <span class="val">1.00 Hz</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Envelope source example -->
+      <div class="incard">
+        <div class="incard-top">
+          <span class="incard-title">Input 2</span>
+          <span class="incard-target">→ FEEDBACK</span>
+        </div>
+        <div class="ctl">
+          <label>Depth</label>
+          <input type="range" min="0" max="1" step="0.01" value="0.8" />
+        </div>
+        <div class="ctl">
+          <label>Source</label>
+          <div class="seg"><button>Osc</button><button class="on">Env</button></div>
+        </div>
+        <div class="src">
+          <div class="ctl">
+            <label>Attack</label>
+            <input type="range" min="0" max="1" step="0.001" value="0.1" />
+            <span class="val">10 ms</span>
+          </div>
+          <div class="ctl">
+            <label>Decay</label>
+            <input type="range" min="0" max="1" step="0.001" value="0.4" />
+            <span class="val">200 ms</span>
+          </div>
+          <div class="ctl">
+            <label>Curve</label>
+            <input type="range" min="-1" max="1" step="0.01" value="0" />
+            <span class="val">lin</span>
+          </div>
+          <button class="trig">Trigger</button>
+        </div>
+      </div>
+
+      <!-- Empty / unassigned input example -->
+      <div class="incard is-empty">
+        <div class="incard-top">
+          <span class="incard-title">Input 3</span>
+          <span class="incard-target">→ unassigned</span>
+        </div>
+        <div class="ctl">
+          <label>Source</label>
+          <div class="seg"><button>Osc</button><button>Env</button><button class="on">Off</button></div>
+        </div>
+        <div class="src-empty">no source</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Hover status bar -->
+  <footer class="statusbar" id="statusbar">&nbsp;</footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
