@@ -8,7 +8,11 @@
   // emulator's normToSec() (0->1ms, 1->10s); osc freqs are in Hz.
   const RANGES = {
     depth:  { min: 0,    max: 1,     step: 0.01,  def: 0.5 },
-    coarse: { min: 0,    max: 20000, step: 1,     def: 0   }, // Hz (0..20 kHz)
+    // Hz. Capped at 4.8 kHz, not 20 kHz: CV is sampled once per 5-frame block
+    // (9.6 kHz) on the module and now in the emulator too, so anything above
+    // half that aliases to a lower frequency instead of doing what the label
+    // says. This is a real hardware ceiling, not an emulator shortcut.
+    coarse: { min: 0,    max: 4800,  step: 1,     def: 0   },
     fine:   { min: 0.02, max: 20,    step: 0.01,  def: 1   }, // Hz (LFO)
     atk:    { min: 0,    max: 1,     step: 0.001, def: 0.05 },
     dec:    { min: 0,    max: 1,     step: 0.001, def: 0.623  }, // default 310 ms
@@ -142,7 +146,9 @@
     relabel();
   }
 
-  // Main CV panel: one card per param jack (+ GATE). Pitch is wired.
+  // Main CV panel: one card per param jack (+ GATE). All five params are wired:
+  // pitch feeds the fundamental in octaves, and the other four sum into their
+  // shaper knob (clamped 0..1). GATE is digital-only and still unassigned.
   function buildParamCards() {
     const M = FT.model;
     const box = document.getElementById("cv-cards");
@@ -154,7 +160,7 @@
         title: jackT ? `${M.labelOf(jackT)} CV` : `${param} CV`,
         note: `→ ${M.labelOf(M.ctrl.knobs[param])}`,
         target: param,
-        wired: param === "pitchHz",
+        wired: true,
       }));
     });
     const gate = rowEl("incard is-empty",

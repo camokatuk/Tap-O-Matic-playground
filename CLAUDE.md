@@ -43,11 +43,14 @@ User builds/flashes firmware themselves.
 **Three-layer architecture** (the key idea — keep sources out of firmware):
 - `foxtail_dsp.h` (repo root): the shared, hardware-free DSP. **Must stay
   C++14-safe** (firmware is `-std=gnu++14`; no `std::clamp`/`std::optional`).
-  `Controls` struct is the seam. `kNumHarmonics = 9` (9 sliders = 9 partials).
+  `Controls` struct is the seam. `kNumPartials = 512` (the one CPU
+  knob), `kNumBands = 9` (9 sliders = 9 octave bands over that bank).
 - `FoxTail.cpp` (repo root): thin firmware — reads `time_machine_hardware.*`
-  into `Controls`, no source generators. Slider `h` = harmonic `h`
-  (`amp = clamp(slider + levelCV, 0..1)`); TIME knob = base pitch; V/OCT jack
-  (`TIME_CV`, analog) = pitch CV in octaves.
+  into `Controls`, no source generators. Slider `b` = gain of octave band `b`
+  (`clamp(slider + levelCV, 0..1)`), pot `b` = that band's pan; TIME knob = base
+  pitch; V/OCT jack (`TIME_CV`, analog) = pitch CV in octaves; SPREAD/FEEDBACK/
+  HPF/LPF (+ their CV jacks) = the shaper; the two switches pick Cluster/Shepard
+  and aligned/random phase. The osc object is placed in DTCM (`DTCM_MEM_SECTION`).
 - `emulator/` (native audio + web UI, **emulator-only sources**): run with
   `./emulator/run.sh` → http://localhost:4343 (miniaudio→CoreAudio + cpp-httplib;
   builds via clang++ with no cmake needed). `emulator/src/sources.h` =
@@ -55,8 +58,10 @@ User builds/flashes firmware themselves.
   never includes it. Web UI JS is split by theme (user prefers small, focused
   files — keep it that way): `app.js` (core glue + panel controls +
   persistence), `sources.js` (CV source cards; all slider ranges live in its
-  `RANGES` object), `labels.js` (label model + editor); shared via a small `FT`
-  namespace + global `send`/`saveVal`/`span`/`rowEl`.
+  `RANGES` object), `labels.js` (label model + editor), `partials.js` (partial
+  viewer, fed by `/partials` — the engine's own per-partial state, never
+  recomputed in JS); shared via a small `FT` namespace + global
+  `send`/`saveVal`/`span`/`rowEl`.
 
 **Modulation.** General `CvSource` per target (pitch + each slider): off/osc/env
 + depth. Slider CV sums into slider (clamped); pitch CV is octaves (`2^cv`). Osc
@@ -70,8 +75,16 @@ emulator UI (writes the SVG + re-renders). Regenerate the PNG with
 **never hand-edit `emulator/web/Fox-Tail.png`**. Emulator control state persists
 in the browser's localStorage.
 
-**Done:** additive osc (basic `std::sin` per partial, unoptimized), env+osc
-sources wired to pitch and to every slider CV (emulator + firmware).
-**Not done / open:** spread/feedback/hpf/lpf/GATE have no DSP function yet;
-final control map; osc CPU optimization; the new firmware paths are untested on
-hardware.
+**Control map + engine design:** `docs/claude/control-maps.md` (living doc);
+the commercial reference it borrows from is `docs/claude/pigments-harmonic-engine.md`.
+
+**Done:** 512-partial LUT engine (fixed-point phase, shared sine table, per-band
+piecewise-linear spectral envelope in log-frequency, per-band pan, Cluster +
+Shepard shaper, Nyquist fade, random phase, Hammond-style fixed gain staging);
+all 9 sliders + 9 pots + 5 knobs + 2 switches wired in both emulator and
+firmware; env+osc CV sources on pitch, every slider, and all four shaper knobs;
+partial viewer in the emulator.
+**Not done / open:** GATE has no function; **nothing has run on hardware yet** —
+the CPU budget (~76% at 512 partials, ~39% at 256) and the switch polarity are
+both unverified; whinebug's "additive osc will be OG-quiet" was measured
+near-idle, not at 76% load.

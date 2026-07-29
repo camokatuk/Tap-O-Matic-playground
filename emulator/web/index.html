@@ -21,63 +21,63 @@
         <!-- LEVEL SLIDERS (DRY + 8) -> harmonic amplitudes.
              The 9 column x-positions below are reused by the pots. -->
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp0" data-label="Level 1 (DRY)" style="left:6.4%; top:22%; height:28%;" />
+               data-id="amp0" data-label="Band 1 (partial 1)" style="left:6.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp1" data-label="Level 2" style="left:17.3%; top:22%; height:28%;" />
+               data-id="amp1" data-label="Band 2 (partials 2-3)" style="left:17.3%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp2" data-label="Level 3" style="left:28.2%; top:22%; height:28%;" />
+               data-id="amp2" data-label="Band 3 (partials 4-7)" style="left:28.2%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp3" data-label="Level 4" style="left:39.1%; top:22%; height:28%;" />
+               data-id="amp3" data-label="Band 4 (partials 8-15)" style="left:39.1%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp4" data-label="Level 5" style="left:50.0%; top:22%; height:28%;" />
+               data-id="amp4" data-label="Band 5 (partials 16-31)" style="left:50.0%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp5" data-label="Level 6" style="left:60.7%; top:22%; height:28%;" />
+               data-id="amp5" data-label="Band 6 (partials 32-63)" style="left:60.7%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp6" data-label="Level 7" style="left:71.5%; top:22%; height:28%;" />
+               data-id="amp6" data-label="Band 7 (partials 64-127)" style="left:71.5%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp7" data-label="Level 8" style="left:82.4%; top:22%; height:28%;" />
+               data-id="amp7" data-label="Band 8 (partials 128-255)" style="left:82.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp8" data-label="Level 9" style="left:93.1%; top:22%; height:28%;" />
+               data-id="amp8" data-label="Band 9 (partials 256-511)" style="left:93.1%; top:22%; height:28%;" />
 
         <!-- TINY POTS (BAL / pan row) — aligned to the slider columns above. -->
-        <div class="tiny-pot" data-id="pan0" data-unassigned data-label="BAL DRY"
+        <div class="tiny-pot" data-id="pan0" data-label="Pan band 1"
              data-min="-1" data-max="1" data-value="0" style="left:6.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan1" data-unassigned data-label="BAL 1"
+        <div class="tiny-pot" data-id="pan1" data-label="Pan band 2"
              data-min="-1" data-max="1" data-value="0" style="left:17.8%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan2" data-unassigned data-label="BAL 2"
+        <div class="tiny-pot" data-id="pan2" data-label="Pan band 3"
              data-min="-1" data-max="1" data-value="0" style="left:28.7%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan3" data-unassigned data-label="BAL 3"
+        <div class="tiny-pot" data-id="pan3" data-label="Pan band 4"
              data-min="-1" data-max="1" data-value="0" style="left:39.6%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan4" data-unassigned data-label="BAL 4"
+        <div class="tiny-pot" data-id="pan4" data-label="Pan band 5"
              data-min="-1" data-max="1" data-value="0" style="left:50.5%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan5" data-unassigned data-label="BAL 5"
+        <div class="tiny-pot" data-id="pan5" data-label="Pan band 6"
              data-min="-1" data-max="1" data-value="0" style="left:61.2%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan6" data-unassigned data-label="BAL 6"
+        <div class="tiny-pot" data-id="pan6" data-label="Pan band 7"
              data-min="-1" data-max="1" data-value="0" style="left:72.0%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan7" data-unassigned data-label="BAL 7"
+        <div class="tiny-pot" data-id="pan7" data-label="Pan band 8"
              data-min="-1" data-max="1" data-value="0" style="left:82.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan8" data-unassigned data-label="BAL 8"
+        <div class="tiny-pot" data-id="pan8" data-label="Pan band 9"
              data-min="-1" data-max="1" data-value="0" style="left:93.6%; top:54%;"></div>
 
         <!-- LARGER KNOBS. TIME is wired (fundamental); the rest are unassigned. -->
-        <div class="knob" data-id="pitchHz" data-label="TIME (frequency)"
+        <div class="knob" data-id="knob1" data-label="Knob 1 — pitch"
              data-min="20" data-max="2000" data-log="1" data-value="220"
              style="left:11%; top:66%;"></div>
-        <div class="knob" data-id="spread" data-unassigned data-label="SPREAD"
+        <div class="knob" data-id="knob2" data-label="Knob 2 — window start"
              data-min="0" data-max="1" data-value="0" style="left:30.5%; top:66%;"></div>
-        <div class="knob" data-id="feedback" data-unassigned data-label="FEEDBACK"
+        <div class="knob" data-id="knob3" data-label="Knob 3 — window width"
              data-min="0" data-max="1" data-value="0" style="left:50%; top:66%;"></div>
-        <div class="knob" data-id="hpf" data-unassigned data-label="HIGHPASS"
+        <div class="knob" data-id="knob4" data-label="Knob 4 — cluster: partials/cluster | shepard: phi"
              data-min="0" data-max="1" data-value="0" style="left:69.5%; top:66%;"></div>
-        <div class="knob" data-id="lpf" data-unassigned data-label="LOWPASS"
+        <div class="knob" data-id="knob5" data-label="Knob 5 — cluster: density | shepard: window gain"
              data-min="0" data-max="1" data-value="0" style="left:89%; top:66%;"></div>
 
         <!-- SWITCHES (two-position). Positioned roughly over the panel toggles. -->
-        <div class="switch" data-id="fbMode" data-unassigned
-             data-label="Feedback mode" data-states="ALL,TAP 8" data-value="0"
+        <div class="switch" data-id="switch1"
+             data-label="Switch 1 — shaper mode" data-states="CLUSTER,SHEPARD" data-value="0"
              style="left:20.85%; top:71.3%;"></div>
-        <div class="switch" data-id="filterPos" data-unassigned
-             data-label="Filter position" data-states="PRE,POST" data-value="0"
+        <div class="switch" data-id="switch2"
+             data-label="Switch 2 — parity" data-states="ALL,ODD ONLY" data-value="0"
              style="left:79.7%; top:71.3%;"></div>
       </div>
 
@@ -119,13 +119,13 @@
       <section class="strip">
         <label>Fundamental</label>
         <input class="hslider" type="range" min="20" max="2000" step="1" value="220"
-               data-id="pitchHz" data-label="Fundamental frequency" data-mirror="1" />
+               data-id="knob1" data-label="Knob 1 — pitch" data-mirror="1" />
         <div class="readout"><span id="freq-readout">220</span> Hz</div>
       </section>
 
       <section class="strip">
-        <label>Harmonic 1 (LED)</label>
-        <div class="led"><i id="led0"></i></div>
+        <label>Band levels (LEDs)</label>
+        <div class="ledrow"><div class="led"><i id="led0"></i></div><div class="led"><i id="led1"></i></div><div class="led"><i id="led2"></i></div><div class="led"><i id="led3"></i></div><div class="led"><i id="led4"></i></div><div class="led"><i id="led5"></i></div><div class="led"><i id="led6"></i></div><div class="led"><i id="led7"></i></div><div class="led"><i id="led8"></i></div></div>
       </section>
 
       <section class="strip">
@@ -133,22 +133,32 @@
         <div id="unassigned" class="unassigned"></div>
       </section>
 
-      <p class="hint">Milestone 1: DRY slider = amplitude of one sine, TIME = its
-      frequency. Unassigned controls above are live in the UI but not yet mapped
-      to the DSP.</p>
+      <p class="hint">Sliders are 9 octave bands of a 512-partial bank (breakpoints of a piecewise-linear spectral envelope in log-frequency); pots pan each band. The four right-hand knobs drive the shaper — CLUSTER pulls partials toward their cluster start, SHEPARD slides them toward the next partial up. See docs/claude/control-maps.md.</p>
     </aside>
   </div>
 
+  <!-- Partial viewer — drawn from /partials, i.e. the engine's own per-partial
+       state. X = frequency (log), Y = amplitude (dB), colour = pan. -->
+  <section class="inputs" id="partials-panel">
+    <div class="inputs-head">
+      <h2>Partials</h2>
+      <span class="badge" id="partial-count">—</span>
+    </div>
+    <canvas id="partials-canvas"></canvas>
+    <div class="hint">Shaded band = shaper window (SPREAD/FEEDBACK). Dashed blue =
+      octave-band edges, one per slider. Red dashes = Nyquist; partials past it fade
+      out and show as faint ticks. Colour is pan: blue left, red right.</div>
+  </section>
+
   <!-- ===================================================================
        CV INPUT SOURCES — one card per param CV jack (+ GATE), generated by
-       labels.js. The pitch (V/OCT) card is live (osc/env -> pitch). The other
-       params (spread/feedback/hpf/lpf) have no DSP function yet, so their cards
-       stay inert until those features exist; GATE is a placeholder.
+       labels.js. All five are live: pitch (V/OCT) plus the four shaper knobs,
+       each summing into its knob and clamped. GATE is still a placeholder.
        =================================================================== -->
   <section class="inputs">
     <div class="inputs-head">
       <h2>CV Input Sources</h2>
-      <span class="badge">pitch live · other params await DSP</span>
+      <span class="badge">all live — pitch + the four shaper knobs</span>
     </div>
     <div class="incard-row" id="cv-cards"></div>
   </section>
@@ -175,5 +185,6 @@
   <script src="app.js"></script>
   <script src="sources.js"></script>
   <script src="labels.js"></script>
+  <script src="partials.js"></script>
 </body>
 </html>

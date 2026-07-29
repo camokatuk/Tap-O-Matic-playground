@@ -1254,7 +1254,7 @@
          sodipodi:role="line"
          id="tspan6398"
          x="314.52167"
-         y="766.55341">SPREAD</tspan></text>
+         y="766.55341">POSITION</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1264,7 +1264,7 @@
          sodipodi:role="line"
          id="tspan4852"
          x="290.13028"
-         y="661.42627">ALL</tspan></text>
+         y="661.42627">CLUSTER</tspan></text>
     <g
        id="g3086"
        transform="translate(0,16)">
@@ -1287,7 +1287,7 @@
            sodipodi:role="line"
            id="tspan2624"
            x="335.3428"
-           y="692.56079">SPREAD</tspan></text>
+           y="692.56079">POSITION</tspan></text>
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1297,7 +1297,7 @@
            sodipodi:role="line"
            id="tspan2655"
            x="424.81436"
-           y="692.56079">FEEDBACK</tspan></text>
+           y="692.56079">PARTIALS</tspan></text>
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1307,7 +1307,7 @@
            sodipodi:role="line"
            id="tspan2686"
            x="514.94092"
-           y="692.56079">HIGHPASS</tspan></text>
+           y="692.56079">CLUSTERS</tspan></text>
       <text
          xml:space="preserve"
          style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1317,7 +1317,7 @@
            sodipodi:role="line"
            id="tspan2717"
            x="604.93896"
-           y="692.56079">LOWPASS</tspan></text>
+           y="692.56079">DENSITY</tspan></text>
     </g>
     <text
        xml:space="preserve"
@@ -1328,7 +1328,7 @@
          sodipodi:role="line"
          id="tspan4872"
          x="290.45081"
-         y="708.57794">TAP 8</tspan></text>
+         y="708.57794">SHEPARD</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1348,7 +1348,7 @@
          sodipodi:role="line"
          id="tspan1441"
          x="447.10443"
-         y="766.55341">FEEDBACK</tspan></text>
+         y="766.55341">PARTIALS</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1358,7 +1358,7 @@
          sodipodi:role="line"
          id="tspan12420"
          x="491.59067"
-         y="766.55341">HPF</tspan></text>
+         y="766.55341">CLUSTERS</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1368,7 +1368,7 @@
          sodipodi:role="line"
          id="tspan14818"
          x="535.86066"
-         y="766.55341">LPF</tspan></text>
+         y="766.55341">DENS</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1562,7 +1562,7 @@
          sodipodi:role="line"
          id="tspan5659"
          x="560.41376"
-         y="661.39362">PRE</tspan></text>
+         y="661.39362">IN PHASE</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1572,7 +1572,7 @@
          sodipodi:role="line"
          id="tspan5679"
          x="560.73425"
-         y="708.54529">POST</tspan></text>
+         y="708.54529">RND</tspan></text>
     <path
        style="display:inline;fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 560.1334,663.89739 0.0196,6.62889"

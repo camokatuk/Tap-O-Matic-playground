@@ -135,7 +135,7 @@ document.querySelectorAll('input[type="range"][data-id]').forEach((el) => {
     send(id, v);
     saveVal(id, v);
     status(`${label}: ${fmt(v)}`);
-    if (id === "pitchHz") mirrorFreq(v);
+    if (id === "knob1") mirrorFreq(v);
   };
   el.addEventListener("input", emit);
   el.addEventListener("mouseenter", () =>
@@ -153,9 +153,9 @@ const freqReadout = document.getElementById("freq-readout");
 function mirrorFreq(hz) {
   if (freqReadout) freqReadout.textContent = hz.toFixed(0);
   document
-    .querySelectorAll('[data-id="pitchHz"][data-mirror]')
+    .querySelectorAll('[data-id="knob1"][data-mirror]')
     .forEach((m) => (m.value = hz));
-  const knob = document.querySelector('.knob[data-id="pitchHz"]');
+  const knob = document.querySelector('.knob[data-id="knob1"]');
   if (knob) setKnobValue(knob, hz, /*silent=*/ true);
 }
 
@@ -188,7 +188,7 @@ document.querySelectorAll(".knob, .tiny-pot").forEach((knob) => {
     lastY = e.clientY;
     const v = knob._fromT(t);
     setKnobValue(knob, v, false);
-    if (id === "pitchHz") mirrorFreq(v);
+    if (id === "knob1") mirrorFreq(v);
   });
   window.addEventListener("mouseup", () => (dragging = false));
 
@@ -239,17 +239,20 @@ document.querySelectorAll(".switch").forEach((sw) => {
   sw.addEventListener("mouseleave", clearStatus);
 });
 
-// ---- Meter polling (LED) ----------------------------------------------------
-const led0 = document.getElementById("led0");
+// ---- Meter polling (LEDs) ---------------------------------------------------
+// One LED per octave band. /meters returns comma-separated levels, one per band.
+const leds = Array.from({ length: 9 }, (_, i) => document.getElementById("led" + i));
 async function pollMeters() {
   try {
-    const txt = await (await fetch("/meters")).text();
-    const m = parseFloat(txt);
-    if (led0 && !Number.isNaN(m)) {
+    const parts = (await (await fetch("/meters")).text()).split(",");
+    parts.forEach((p, i) => {
+      const led = leds[i];
+      const m = parseFloat(p);
+      if (!led || Number.isNaN(m)) return;
       const b = Math.min(1, m);
-      led0.style.background = `rgb(${60 + b * 195},${b * 40},${b * 30})`;
-      led0.style.boxShadow = `0 0 ${b * 10}px rgba(216,98,58,${b})`;
-    }
+      led.style.background = `rgb(${60 + b * 195},${b * 40},${b * 30})`;
+      led.style.boxShadow = `0 0 ${b * 10}px rgba(216,98,58,${b})`;
+    });
   } catch (_) {}
   setTimeout(pollMeters, 33); // ~30 Hz
 }

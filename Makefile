@@ -14,9 +14,16 @@ MODULE ?= tapomatic
 ifeq ($(MODULE),tapomatic)
   TARGET     = Tap-O-Matic
   MODULE_SRC = TimeMachine.cpp
+  # Delay stays stock: whinebug.md says it is already at its optimum, so its
+  # build flags are not something to go poking at.
+  OPT        = -Os
 else ifeq ($(MODULE),foxtail)
   TARGET     = Fox-Tail
-  MODULE_SRC = FoxTail.cpp          # not created yet — see docs/claude/oscillator-impl.md
+  MODULE_SRC = FoxTail.cpp
+  # Optimise for SPEED, not size. The additive engine's inner loop runs
+  # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
+  # scheduled, which is enough on its own to blow the audio budget.
+  OPT        = -O3
 else
   $(error Unknown MODULE '$(MODULE)'. Use MODULE=tapomatic or MODULE=foxtail)
 endif
@@ -27,7 +34,6 @@ USE_DAISYSP_LGPL=1
 # Sources: shared board support + the selected firmware.
 CPP_SOURCES = time_machine_hardware.cpp $(MODULE_SRC)
 LDFLAGS = -u _printf_float
-OPT = -Os
 
 # Library Locations
 LIBDAISY_DIR = ../DaisyExamples/libDaisy

@@ -272,3 +272,17 @@ html, body {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Row of per-band LEDs (one per octave band / slider). */
+.ledrow { display: flex; gap: 6px; align-items: center; }
+
+/* Partial viewer canvas. */
+#partials-canvas {
+  width: 100%;
+  height: 220px;
+  display: block;
+  background: #0d0f14;
+  border: 1px solid #222733;
+  border-radius: 6px;
+}
+#partials-panel .hint { margin-top: 8px; }

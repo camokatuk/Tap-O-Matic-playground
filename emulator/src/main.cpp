@@ -20,6 +20,8 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -93,15 +95,44 @@ struct CvSource {
     }
 };
 
-std::atomic<float> g_amp[foxtail::kNumHarmonics]; // per-harmonic slider base values
-std::atomic<float> g_pitchHz{220.f};              // TIME knob -> fundamental
-std::atomic<float> g_master{0.7f};                // host master volume
+// Panel knobs 2..5, numbered left to right (knob 1 is pitch and is handled
+// separately). Knobs 2 and 3 mean the same thing in both shaper modes; 4 and 5
+// change meaning with switch 1.
+enum ShaperKnob {
+    kKnob2 = 0,      // window start
+    kKnob3,          // window width
+    kKnob4,          // cluster: partials per cluster | shepard: phi
+    kKnob5,          // shapeB: cluster density       | shepard: window gain
+    kNumShaperKnobs,
+};
 
-CvSource g_srcAmp[foxtail::kNumHarmonics];        // per-slider CV source
-CvSource g_srcPitch;                              // pitch CV source
+std::atomic<float> g_band[foxtail::kNumBands];  // sliders: per-band gains
+std::atomic<float> g_pan[foxtail::kNumBands];   // pots: per-band pan, -1..1
+std::atomic<float> g_knob[kNumShaperKnobs];     // the four shaper knobs, 0..1
+std::atomic<float> g_pitchHz{220.f};            // knob 1 -> fundamental
+std::atomic<float> g_master{0.7f};              // host master volume
+std::atomic<int>   g_mode{foxtail::kModeCluster}; // switch 1: cluster/shepard
+std::atomic<int>   g_parity{0};                   // switch 2: 0 = all, 1 = odd
 
-std::atomic<float> g_meter0{0.f};                 // LED feedback for the UI
-std::atomic<float> g_pitchCvDbg{0.f};             // last pitch CV (octaves), /dbg
+CvSource g_srcBand[foxtail::kNumBands];         // per-slider CV source
+CvSource g_srcKnob[kNumShaperKnobs];            // per-knob CV source (analog jacks)
+CvSource g_srcPitch;                            // pitch CV source
+
+std::atomic<float> g_meter[foxtail::kNumBands]; // LED feedback for the UI
+std::atomic<float> g_pitchCvDbg{0.f};           // last pitch CV (octaves), /dbg
+
+// --- Partial-viewer snapshot ------------------------------------------------
+// The audio thread publishes the engine's actual per-partial state; the HTTP
+// thread reads it with a seqlock (bump the counter to odd while writing, back to
+// even when stable; a reader that sees an odd or changed counter retries). This
+// is emulator-only introspection — nothing here runs on the module.
+std::atomic<unsigned> g_snapSeq{0};
+float g_snapFreq[foxtail::kNumPartials];
+float g_snapL[foxtail::kNumPartials];
+float g_snapR[foxtail::kNumPartials];
+std::atomic<float> g_snapWinStartHz{0.f};
+std::atomic<float> g_snapWinEndHz{0.f};
+std::atomic<float> g_snapF0{0.f};
 
 foxtail::FoxTailOsc g_osc;
 
@@ -122,51 +153,123 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         g_scratchR.resize(frameCount);
     }
 
-    const float dt = (float)frameCount / kSampleRate;
+    // Run in fixed 5-frame chunks — the firmware's block size. Controls and CV
+    // sources are therefore updated at exactly the rate the module updates them
+    // (9.6 kHz), not at whatever buffer size CoreAudio happens to hand us.
+    // Before this, a 512-frame buffer sampled the CV sources at 94 Hz, so any
+    // modulator above ~47 Hz aliased down to something far slower than its label
+    // claimed — that is not FM, it is a staircase. The module has the same
+    // ceiling (~4.8 kHz); the emulator should show it, not hide it.
+    constexpr ma_uint32 kEmuBlock = 5;
 
-    foxtail::Controls c;
-    // Each slider: effective amplitude = clamp(base + its CV, 0..1). The CV
-    // routing is this single line per slider, so decoupling a slider from its
-    // CV later is trivial (drop/redirect the g_srcAmp[h] term).
-    for (int h = 0; h < foxtail::kNumHarmonics; ++h) {
-        float base = g_amp[h].load(std::memory_order_relaxed);
-        float amp  = base + g_srcAmp[h].run(dt);
-        c.amp[h]   = amp < 0.f ? 0.f : (amp > 1.f ? 1.f : amp);
+    for (ma_uint32 off = 0; off < frameCount; off += kEmuBlock) {
+        const ma_uint32 n  = (frameCount - off) < kEmuBlock ? (frameCount - off) : kEmuBlock;
+        const float     dt = (float)n / kSampleRate;
+
+        foxtail::Controls c;
+        // Each slider: effective gain = clamp(base + its CV, 0..1). The CV routing
+        // is this single line per slider, so decoupling a slider from its CV later
+        // is trivial (drop/redirect the g_srcBand[b] term).
+        for (int b = 0; b < foxtail::kNumBands; ++b) {
+            float base = g_band[b].load(std::memory_order_relaxed);
+            float g    = base + g_srcBand[b].run(dt);
+            c.bandGain[b] = g < 0.f ? 0.f : (g > 1.f ? 1.f : g);
+            // Pots are centre-detented -1..1 on the panel; the DSP wants 0..1.
+            c.bandPan[b] = 0.5f * (g_pan[b].load(std::memory_order_relaxed) + 1.f);
+        }
+
+        // The four shaper knobs, each summed with its analog CV jack.
+        float k[kNumShaperKnobs];
+        for (int i = 0; i < kNumShaperKnobs; ++i) {
+            float v = g_knob[i].load(std::memory_order_relaxed) + g_srcKnob[i].run(dt);
+            k[i] = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+        }
+        c.position = k[kKnob2];
+        c.window   = k[kKnob3];
+        c.shapeA   = k[kKnob4];
+        c.shapeB   = k[kKnob5];
+
+        c.mode        = g_mode.load(std::memory_order_relaxed);
+        c.parity      = g_parity.load(std::memory_order_relaxed) ? 1.f : 0.f;
+        c.pitchHz     = g_pitchHz.load(std::memory_order_relaxed);
+        c.pitchCv     = g_srcPitch.run(dt) * kPitchMaxOct; // depth already applied
+        c.master      = g_master.load(std::memory_order_relaxed);
+        g_pitchCvDbg.store(c.pitchCv, std::memory_order_relaxed);
+
+        g_osc.Process(c, g_scratchL.data() + off, g_scratchR.data() + off, n);
     }
-
-    c.pitchHz = g_pitchHz.load(std::memory_order_relaxed);
-    c.pitchCv = g_srcPitch.run(dt) * kPitchMaxOct; // depth already applied
-    c.master  = g_master.load(std::memory_order_relaxed);
-    g_pitchCvDbg.store(c.pitchCv, std::memory_order_relaxed);
-
-    g_osc.Process(c, g_scratchL.data(), g_scratchR.data(), frameCount);
 
     for (ma_uint32 i = 0; i < frameCount; ++i) {
         out[2 * i + 0] = g_scratchL[i];
         out[2 * i + 1] = g_scratchR[i];
     }
 
-    g_meter0.store(g_osc.Meter(0), std::memory_order_relaxed);
+    for (int b = 0; b < foxtail::kNumBands; ++b)
+        g_meter[b].store(g_osc.Meter(b), std::memory_order_relaxed);
+
+    // Publish the partial snapshot for the viewer.
+    // Controls are per-chunk now, so recover the last chunk's f0 from the atomics.
+    const float f0 = g_pitchHz.load(std::memory_order_relaxed)
+                   * std::pow(2.f, g_pitchCvDbg.load(std::memory_order_relaxed));
+    g_snapSeq.fetch_add(1, std::memory_order_release); // -> odd, writing
+    for (int k = 0; k < foxtail::kNumPartials; ++k) {
+        g_snapFreq[k] = g_osc.PartialFreq(k);
+        g_snapL[k]    = g_osc.PartialAmpL(k);
+        g_snapR[k]    = g_osc.PartialAmpR(k);
+    }
+    g_snapF0.store(f0, std::memory_order_relaxed);
+    g_snapWinStartHz.store(g_osc.WindowStart() * f0, std::memory_order_relaxed);
+    g_snapWinEndHz.store(g_osc.WindowEnd() * f0, std::memory_order_relaxed);
+    g_snapSeq.fetch_add(1, std::memory_order_release); // -> even, stable
 }
 
-// Map a UI control id to state. Ids are either a base value ("amp3", "pitchHz",
-// "master") or a per-target CV param ("amp3.cv.env.attack", "pitchHz.cv.src").
-bool setControl(const std::string& id, float value) {
-    if (id == "master")  { g_master.store(value, std::memory_order_relaxed);  return true; }
-    if (id == "pitchHz") { g_pitchHz.store(value, std::memory_order_relaxed); return true; }
+// Panel knob id -> shaper knob index. Ids match controls.json so the label
+// editor keeps working; what they *do* is set by the mode switch.
+int shaperKnobIndex(const std::string& name) {
+    if (name == "knob2") return kKnob2;
+    if (name == "knob3") return kKnob3;
+    if (name == "knob4")      return kKnob4;
+    if (name == "knob5")      return kKnob5;
+    return -1;
+}
 
-    // Pitch CV: "pitchHz.cv.*"  (strip the "pitchHz." prefix -> "cv.<leaf>")
-    if (startsWith(id, "pitchHz.cv."))
-        return g_srcPitch.set(id.substr(8), value);
+// Map a UI control id to state. Ids are either a base value ("amp3", "pan3",
+// "knob2", "knob1", "master") or a per-target CV param
+// ("amp3.cv.env.attack", "knob2.cv.src", "knob1.cv.src").
+bool setControl(const std::string& id, float value) {
+    if (id == "master")    { g_master.store(value, std::memory_order_relaxed);  return true; }
+    if (id == "knob1")   { g_pitchHz.store(value, std::memory_order_relaxed); return true; }
+    if (id == "switch1")    { g_mode.store((int)value, std::memory_order_relaxed); return true; }
+    if (id == "switch2") { g_parity.store((int)value, std::memory_order_relaxed); return true; }
+
+    // Pitch CV: "knob1.cv.*"  (strip the "knob1." prefix -> "cv.<leaf>")
+    if (startsWith(id, "knob1.cv."))
+        return g_srcPitch.set(id.substr(6), value);
+
+    const size_t dot = id.find('.');
+    const std::string head = (dot == std::string::npos) ? id : id.substr(0, dot);
+
+    // Shaper knobs: "knob2" / "knob5" / ... or "<knob>.cv.*"
+    const int ki = shaperKnobIndex(head);
+    if (ki >= 0) {
+        if (dot == std::string::npos) { g_knob[ki].store(value, std::memory_order_relaxed); return true; }
+        return g_srcKnob[ki].set(id.substr(dot + 1), value);
+    }
 
     // Sliders: "ampN" or "ampN.cv.*"
-    if (startsWith(id, "amp")) {
-        size_t dot = id.find('.');
-        std::string head = (dot == std::string::npos) ? id : id.substr(0, dot);
+    if (startsWith(head, "amp")) {
         int idx = std::atoi(head.c_str() + 3); // "amp3" -> 3
-        if (idx < 0 || idx >= foxtail::kNumHarmonics) return false; // slider w/o harmonic
-        if (dot == std::string::npos) { g_amp[idx].store(value, std::memory_order_relaxed); return true; }
-        return g_srcAmp[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
+        if (idx < 0 || idx >= foxtail::kNumBands) return false;
+        if (dot == std::string::npos) { g_band[idx].store(value, std::memory_order_relaxed); return true; }
+        return g_srcBand[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
+    }
+
+    // Pots: "panN" -> per-band pan. No CV jack on the hardware, so no cv route.
+    if (startsWith(head, "pan") && dot == std::string::npos) {
+        int idx = std::atoi(head.c_str() + 3);
+        if (idx < 0 || idx >= foxtail::kNumBands) return false;
+        g_pan[idx].store(value, std::memory_order_relaxed);
+        return true;
     }
     return false;
 }
@@ -309,11 +412,46 @@ int main() {
         res.set_content(ok ? "ok" : "unknown", "text/plain");
     });
 
-    // Meter poll: returns comma-separated meter values for the LEDs.
+    // Meter poll: comma-separated per-band levels, one per LED.
     srv.Get("/meters", [](const httplib::Request&, httplib::Response& res) {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%.4f", g_meter0.load(std::memory_order_relaxed));
-        res.set_content(buf, "text/plain");
+        std::string out;
+        char buf[32];
+        for (int b = 0; b < foxtail::kNumBands; ++b) {
+            std::snprintf(buf, sizeof(buf), "%.4f", g_meter[b].load(std::memory_order_relaxed));
+            if (b) out += ",";
+            out += buf;
+        }
+        res.set_content(out, "text/plain");
+    });
+
+    // Partial viewer feed. Header line "f0;nyquist;winStartHz;winEndHz", then one
+    // "freq:ampL:ampR" triple per partial, semicolon separated. Read under the
+    // seqlock so a half-written frame is retried rather than drawn.
+    srv.Get("/partials", [](const httplib::Request&, httplib::Response& res) {
+        static thread_local std::vector<float> f(foxtail::kNumPartials),
+            l(foxtail::kNumPartials), r(foxtail::kNumPartials);
+        float f0 = 0.f, ws = 0.f, we = 0.f;
+        for (int tries = 0; tries < 8; ++tries) {
+            const unsigned s0 = g_snapSeq.load(std::memory_order_acquire);
+            if (s0 & 1u) continue; // mid-write
+            std::memcpy(f.data(), g_snapFreq, sizeof(g_snapFreq));
+            std::memcpy(l.data(), g_snapL, sizeof(g_snapL));
+            std::memcpy(r.data(), g_snapR, sizeof(g_snapR));
+            f0 = g_snapF0.load(std::memory_order_relaxed);
+            ws = g_snapWinStartHz.load(std::memory_order_relaxed);
+            we = g_snapWinEndHz.load(std::memory_order_relaxed);
+            if (g_snapSeq.load(std::memory_order_acquire) == s0) break; // stable
+        }
+        std::string out;
+        out.reserve(16 * foxtail::kNumPartials);
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%.3f;%.1f;%.3f;%.3f", f0, kSampleRate * 0.5f, ws, we);
+        out += buf;
+        for (int k = 0; k < foxtail::kNumPartials; ++k) {
+            std::snprintf(buf, sizeof(buf), ";%.2f:%.5f:%.5f", f[k], l[k], r[k]);
+            out += buf;
+        }
+        res.set_content(out, "text/plain");
     });
 
     // Debug: current pitch-CV value in octaves (for verifying modulation).
