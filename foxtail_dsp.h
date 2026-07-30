@@ -20,7 +20,7 @@
 //     (docs/claude/whinebug.md) forbids.
 //   * Band sliders are breakpoints of a piecewise-linear spectral envelope in
 //     log-frequency over geometric bands spanning the whole bank; the pots pan
-//     each band. Slider/pot 1 are inharmonicity amount and onset.
+//     each band. Slider 1 is inharmonicity; pot 1 is fine tune.
 //   * One shaper, two modes: Cluster and Shepard. Both retune partials inside a
 //     movable window, once per block.
 //   * Constant work per callback: every partial is always rendered, silent ones
@@ -47,8 +47,8 @@ namespace foxtail {
 // of floor()), not the render loop.
 static constexpr int kNumPartials = 96;
 
-// 8 bands, not 9: slider 1 and pot 1 are spent on inharmonicity amount and
-// onset, leaving sliders/pots 2..9 for the bands. 8 bands also happens to be
+// 8 bands, not 9: slider 1 and pot 1 are spent on inharmonicity and fine
+// tune, leaving sliders/pots 2..9 for the bands. 8 bands also happens to be
 // exact octaves if we ever reach 256 partials (bands == log2(partials)).
 static constexpr int kNumBands = 8;
 // No interpolation in the render loop: a 16384-entry table costs 64 KB of DTCM
@@ -76,12 +76,12 @@ struct Controls
                                  0.5f, 0.5f, 0.5f, 0.5f};
 
     // Slider 1: inharmonicity. 0 = pure harmonic series; up bends the series
-    // stiff-string style (piano at low settings, bell/metallic high).
+    // stiff-string style (piano at low settings, bell/metallic high). The k^2
+    // law keeps low partials nearly pure at any setting on its own.
     float inharm = 0.f;
-    // Pot 1: the partial below which the series stays perfectly harmonic, so
-    // the low partials hold pitch while the top goes metallic (cf. Pigments'
-    // Modal Warp "Range").
-    float inharmOnset = 0.f;
+    // Pot 1: fine tune in semitones, -1..+1 (0 = in tune). Knob 1 spans 6.6
+    // octaves over one sweep, far too coarse to tune by hand.
+    float fineTune = 0.f;
 
     float pitchHz = 220.f; // knob 1: fundamental in Hz
     float pitchCv = 0.f;   // V/OCT jack, in OCTAVES (0 = none)
@@ -302,7 +302,6 @@ class FoxTailOsc
     // and the top of the bank lands several times above its harmonic position.
     // (Smaller values only move the top partials, which is barely audible.)
     static constexpr float kInharmMax   = 2.0e-3f;
-    static constexpr float kOnsetOctaves = 6.f; // pot 1 -> onset partial 0..63
 
     // Band crossfade: flat outside the middle kXfadeW of the gap between two
     // slider centres, smoothstep across it.
@@ -338,7 +337,7 @@ class FoxTailOsc
         // the whole bank and the module goes silent with all bands "starved" —
         // which looks exactly like a crash. Railed input should mean "very high
         // note", not "dead module".
-        float f0 = c.pitchHz * std::exp2(c.pitchCv);
+        float f0 = c.pitchHz * std::exp2(c.pitchCv + c.fineTune * (1.f / 12.f));
         f0       = std::fminf(std::fmaxf(f0, kF0Min), kF0Max);
         const float hzToInc = 4294967296.f / sampleRate_; // 2^32 / sr
         const float nyqFade = 1.f / (kNyqFadeFrac * nyquist_);
@@ -372,8 +371,6 @@ class FoxTailOsc
         const float inharmB = inh <= 0.f
                                   ? 0.f
                                   : kInharmMax * (std::exp2(inh * 8.f) - 1.f) / 255.f;
-        // Onset, exponential so the low partials get most of the travel.
-        const float onset = std::exp2(Clamp01(c.inharmOnset) * kOnsetOctaves) - 1.f;
 
         // Window, in partial-index space, exponential so the low partials (where
         // the ear cares) get most of the knob travel.
@@ -436,13 +433,11 @@ class FoxTailOsc
 
             float ratio = idx + w * (shifted - idx);
 
-            // Stiff-string inharmonicity: f_k = k*f0*sqrt(1 + B*(k-onset)^2),
-            // measured from `onset` upward so the bottom of the series stays in
-            // tune. Branchless on purpose (an if() here makes GCC clone the loop
+            // Stiff-string inharmonicity: f_k = k*f0*sqrt(1 + B*k^2).
+            // Branchless on purpose (an if() here makes GCC clone the loop
             // body). std::sqrt is safe ONLY because the build sets
             // -fno-math-errno: that makes it a bare VSQRT, exact at B = 0.
-            const float kk = std::fmaxf(ratio - onset, 0.f);
-            ratio *= std::sqrt(1.f + inharmB * kk * kk);
+            ratio *= std::sqrt(1.f + inharmB * ratio * ratio);
             const float wGain = shepard ? (1.f + w * (winGain - 1.f)) : 1.f;
 
             const float freq = ratio * f0;

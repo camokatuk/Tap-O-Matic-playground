@@ -57,7 +57,8 @@ size 5, never read the audio input.
   own `/partials` state, computes nothing).
 
 **Control map** (details + rationale in control-maps.md): slider 1 =
-inharmonicity (+CV), pot 1 = its onset; sliders/pots 2–9 = gain/pan of 8
+inharmonicity (+CV), pot 1 = fine tune ±1 semitone (centre deadzone in
+firmware); sliders/pots 2–9 = gain/pan of 8
 geometric bands; knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
 (window start/width, then per-mode params); switch 1 down = CLUSTER / up =
 SHEPARD; switch 2 up = ALL / down = ODD ONLY. GATE (digital-only jack) is still

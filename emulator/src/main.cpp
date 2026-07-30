@@ -179,10 +179,11 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
             float v = g_slider[0].load(std::memory_order_relaxed) + g_srcSlider[0].run(dt);
             c.inharm = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
         }
-        // Pot 1 -> inharmonicity onset (partial below which the series stays
-        // harmonic). Master is host-side only; the module uses a fixed level.
-        c.inharmOnset = 0.5f * (g_pot[0].load(std::memory_order_relaxed) + 1.f);
-        c.master      = g_master.load(std::memory_order_relaxed);
+        // Pot 1 -> fine tune, -1..+1 semitone (the pot already stores -1..1).
+        // No deadzone here: the emulator pot is noise-free; the firmware adds
+        // one because a real pot at centre jitters.
+        c.fineTune = g_pot[0].load(std::memory_order_relaxed);
+        c.master   = g_master.load(std::memory_order_relaxed);
 
         // Sliders/pots 2..9 -> the 8 bands.
         for (int b = 0; b < foxtail::kNumBands; ++b) {

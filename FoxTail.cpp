@@ -46,8 +46,7 @@ using namespace oam::time_machine;
 //   Switch 2 (right)        -> up = ALL partials, down = ODD ONLY
 //                              (also the "capture" control during calibration)
 //   Slider 1                -> inharmonicity (0 = pure harmonic series)
-//   Pot 1                   -> inharmonicity onset: the partial below which the
-//                              series stays perfectly harmonic
+//   Pot 1                   -> fine tune, +-1 semitone (centre = in tune)
 //   Sliders 2..9            -> gain of bands 1..8
 //   Pots 2..9               -> pan of bands 1..8
 //   LED 1                   -> inharmonicity amount
@@ -69,7 +68,7 @@ static constexpr int kKnob3Cv = FEEDBACK_CV;
 static constexpr int kKnob4Cv = HIGHPASS_CV;
 static constexpr int kKnob5Cv = LOWPASS_CV;
 
-// Physical slider/pot 1 is the inharmonicity pair; the bands start at 2.
+// Physical slider 1 is inharmonicity, pot 1 is fine tune; the bands start at 2.
 static constexpr int kBandOffset = 1;
 static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm)
 
@@ -85,6 +84,7 @@ static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm
 static constexpr float kFreqMin = 20.0f;
 static constexpr float kFreqMax = 2000.0f;
 static constexpr float kMaster  = 0.7f;
+static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
 
 // --- V/oct calibration ------------------------------------------------------
 // Two-point (1V/3V) via libDaisy's VoctCalibration, persisted to QSPI.
@@ -264,8 +264,17 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     controls.inharm = clampf((1.0f - hw.GetLevelSlider(0)) + hw.GetLevelCV(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
-    // Pot 1 reads with opposite polarity to the rest — raw value is correct.
-    controls.inharmOnset = clampf(hw.GetPanKnob(0), 0.0f, 1.0f);
+    // Pot 1 -> fine tune, +-1 semitone, clockwise = sharp. (This pot reads with
+    // opposite polarity to pots 2..9, so the raw value is the clockwise one.)
+    // A small centre deadzone keeps 12 o'clock exactly in tune despite ADC
+    // noise; the remaining travel is rescaled to the full range.
+    {
+        const float x  = clampf(hw.GetPanKnob(0), 0.0f, 1.0f) * 2.0f - 1.0f;
+        const float ax = fabsf(x) - kFineDeadzone;
+        controls.fineTune = ax <= 0.0f
+                                ? 0.0f
+                                : (x < 0.0f ? -ax : ax) / (1.0f - kFineDeadzone);
+    }
 
     for (int b = 0; b < foxtail::kNumBands; ++b)
     {

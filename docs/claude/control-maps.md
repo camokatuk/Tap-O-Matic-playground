@@ -11,7 +11,7 @@ hardware-verified unless marked open.
 | Control | Function | CV? |
 |---|---|---|
 | Slider 1 | inharmonicity amount | yes |
-| Pot 1 | inharmonicity onset (partial below which the series stays harmonic) | — |
+| Pot 1 | fine tune, ±1 semitone (centre = in tune, clockwise = sharp) | — |
 | Sliders 2–9 | gain of bands 1–8 | yes, 1 each |
 | Pots 2–9 | pan of bands 1–8 | — |
 | Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
@@ -43,9 +43,14 @@ glides it across a band edge.
 with per-band resolution and a CV jack each.
 
 **Inharmonicity** (slider 1 + CV) is the stiff-string model
-`f_k = k·f0·√(1+B·(k−onset)²)` — piano-ish low, bell/metallic high — the one
-thing a filter fundamentally cannot fake. The onset pot keeps the low partials
-in tune while the top bends (cf. Pigments' Modal Warp "Range").
+`f_k = k·f0·√(1+B·k²)` — piano-ish low, bell/metallic high — the one thing a
+filter fundamentally cannot fake. The k² law keeps low partials nearly pure on
+its own.
+
+**Fine tune** (pot 1) adds ±1 semitone to the pitch; knob 1's 6.6-octave sweep
+is far too coarse to tune by hand. The firmware snaps a small centre deadzone
+so 12 o'clock is exactly in tune despite pot noise; the emulator pot is exact
+and has none.
 
 **The shaper (knobs 2–5, switch 1)** retunes partials inside a movable window,
 once per block. Partials outside stay anchored and hold the pitch while the ones
@@ -77,7 +82,11 @@ it never earned a panel control.
 detuned cluster — no knob left for its spread, and Cluster near density 1 gives
 the same beating); Pigments' Window/Warp shaper modes (more mode-dependent knobs
 than the panel carries) and its Shape presets (hand-drawn sliders beat 12
-presets); a master-level pot (fixed internal level instead).
+presets); a master-level pot (fixed internal level instead); an
+inharmonicity-onset pot (partial below which the series stays harmonic, cf.
+Pigments' Modal Warp "Range" — at high settings only quiet/ultrasonic partials
+bent, so the control read as dead; the k² law already protects the low end,
+and the pot went to fine tune).
 
 ## Gain staging
 
