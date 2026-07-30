@@ -78,8 +78,12 @@ static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm
 //   LED mode 2 = LED 1 shows switch 1, LED 9 shows switch 2 (polarity checks)
 // The serial log prints one status line per second (calibration state, CV
 // values, CPU load) — the only precise instrument for retuning kNumPartials.
+// KEEP THE SERIAL LOG AT 0 FOR ANYTHING YOU LISTEN TO: the once-a-second USB
+// burst couples into the audio (whinebug.md), and PrintLine blocks long enough
+// to starve the ADC, which makes pot reads go stale. Its CPU figures also
+// include its own load — use LED mode 1 to retune kNumPartials.
 #define FOXTAIL_LED_MODE   0
-#define FOXTAIL_SERIAL_LOG 1
+#define FOXTAIL_SERIAL_LOG 0
 
 static constexpr float kFreqMin = 20.0f;
 static constexpr float kFreqMax = 2000.0f;
@@ -447,23 +451,51 @@ int main(void)
             //   cpu    = avg/max %. Retune kNumPartials against the WORST-CASE
             //            mode (Cluster) and keep real headroom: overload starves
             //            the ADC, USB and LEDs, not just the audio.
-            hw.PrintLine("p=%d s%d%d cv[" FLT_FMT(2) " " FLT_FMT(2) " "
-                         FLT_FMT(2) " " FLT_FMT(2) " " FLT_FMT(2) " "
-                         FLT_FMT(2) "] voct=" FLT_FMT(3) "/" FLT_FMT(2)
-                         " cpu=" FLT_FMT(1) "/" FLT_FMT(1),
-                         foxtail::kNumPartials,
-                         switch1.Read() ? 1 : 0,
-                         switch2.Read() ? 1 : 0,
-                         FLT_VAR(2, hw.GetAdcValue(SPREAD_CV)),
-                         FLT_VAR(2, hw.GetAdcValue(TIME_CV)),
-                         FLT_VAR(2, hw.GetAdcValue(FEEDBACK_CV)),
-                         FLT_VAR(2, hw.GetAdcValue(HIGHPASS_CV)),
-                         FLT_VAR(2, hw.GetAdcValue(LOWPASS_CV)),
-                         FLT_VAR(2, hw.GetAdcValue(LEVEL_DRY_CV)),
-                         FLT_VAR(3, hw.GetAdcValue(kKnob1Cv)),
-                         FLT_VAR(2, controls.pitchCv),
-                         FLT_VAR(1, loadMeter.GetAvgCpuLoad() * 100.f),
-                         FLT_VAR(1, loadMeter.GetMaxCpuLoad() * 100.f));
+            // A second line alternates with it (one line would truncate),
+            // printing the control seam as the engine receives it. pos/win/A/B
+            // are knob PLUS CV jack — A/B against the emulator with these
+            // numbers, not with physical knob angles.
+            static bool logAlt = false;
+            logAlt = !logAlt;
+            if (logAlt)
+            {
+                hw.PrintLine("pot1=" FLT_FMT(3) " fine=" FLT_FMT(3)
+                             " pos=" FLT_FMT(3) " win=" FLT_FMT(3)
+                             " A=" FLT_FMT(3) " B=" FLT_FMT(3)
+                             " f0=" FLT_FMT(1),
+                             FLT_VAR(3, hw.GetPanKnob(0)),
+                             FLT_VAR(3, controls.fineTune),
+                             FLT_VAR(3, controls.position),
+                             FLT_VAR(3, controls.window),
+                             FLT_VAR(3, controls.shapeA),
+                             FLT_VAR(3, controls.shapeB),
+                             // Effective f0, not pitchHz: fine tune and V/oct
+                             // fold in here, and pitchHz alone hides both.
+                             FLT_VAR(1, controls.pitchHz
+                                            * exp2f(controls.pitchCv
+                                                    + controls.fineTune
+                                                          * (1.0f / 12.0f))));
+            }
+            else
+            {
+                hw.PrintLine("p=%d s%d%d cv[" FLT_FMT(2) " " FLT_FMT(2) " "
+                             FLT_FMT(2) " " FLT_FMT(2) " " FLT_FMT(2) " "
+                             FLT_FMT(2) "] voct=" FLT_FMT(3) "/" FLT_FMT(2)
+                             " cpu=" FLT_FMT(1) "/" FLT_FMT(1),
+                             foxtail::kNumPartials,
+                             switch1.Read() ? 1 : 0,
+                             switch2.Read() ? 1 : 0,
+                             FLT_VAR(2, hw.GetAdcValue(SPREAD_CV)),
+                             FLT_VAR(2, hw.GetAdcValue(TIME_CV)),
+                             FLT_VAR(2, hw.GetAdcValue(FEEDBACK_CV)),
+                             FLT_VAR(2, hw.GetAdcValue(HIGHPASS_CV)),
+                             FLT_VAR(2, hw.GetAdcValue(LOWPASS_CV)),
+                             FLT_VAR(2, hw.GetAdcValue(LEVEL_DRY_CV)),
+                             FLT_VAR(3, hw.GetAdcValue(kKnob1Cv)),
+                             FLT_VAR(2, controls.pitchCv),
+                             FLT_VAR(1, loadMeter.GetAvgCpuLoad() * 100.f),
+                             FLT_VAR(1, loadMeter.GetMaxCpuLoad() * 100.f));
+            }
             last_log_ms = now;
         }
 #endif
