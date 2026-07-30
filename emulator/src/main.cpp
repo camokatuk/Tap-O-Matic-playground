@@ -106,19 +106,25 @@ enum ShaperKnob {
     kNumShaperKnobs,
 };
 
-std::atomic<float> g_band[foxtail::kNumBands];  // sliders: per-band gains
-std::atomic<float> g_pan[foxtail::kNumBands];   // pots: per-band pan, -1..1
+// Physical sliders/pots, 9 of each, exactly as on the panel. Slider 1 and pot 1
+// are inharmonicity and master level; sliders/pots 2..9 are the 8 bands. The
+// mapping happens in the audio callback so the UI ids stay physical.
+constexpr int kNumSliders = foxtail::kNumBands + 1; // 9
+constexpr int kBandOffset = 1;
+
+std::atomic<float> g_slider[kNumSliders];       // raw slider values 0..1
+std::atomic<float> g_pot[kNumSliders];          // raw pot values, -1..1
 std::atomic<float> g_knob[kNumShaperKnobs];     // the four shaper knobs, 0..1
 std::atomic<float> g_pitchHz{220.f};            // knob 1 -> fundamental
 std::atomic<float> g_master{0.7f};              // host master volume
 std::atomic<int>   g_mode{foxtail::kModeCluster}; // switch 1: cluster/shepard
 std::atomic<int>   g_parity{0};                   // switch 2: 0 = all, 1 = odd
 
-CvSource g_srcBand[foxtail::kNumBands];         // per-slider CV source
+CvSource g_srcSlider[kNumSliders];              // per-slider CV source (jack each)
 CvSource g_srcKnob[kNumShaperKnobs];            // per-knob CV source (analog jacks)
 CvSource g_srcPitch;                            // pitch CV source
 
-std::atomic<float> g_meter[foxtail::kNumBands]; // LED feedback for the UI
+std::atomic<float> g_meter[kNumSliders];        // LED feedback: [0]=inharm, then bands
 std::atomic<float> g_pitchCvDbg{0.f};           // last pitch CV (octaves), /dbg
 
 // --- Partial-viewer snapshot ------------------------------------------------
@@ -167,15 +173,24 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         const float     dt = (float)n / kSampleRate;
 
         foxtail::Controls c;
-        // Each slider: effective gain = clamp(base + its CV, 0..1). The CV routing
-        // is this single line per slider, so decoupling a slider from its CV later
-        // is trivial (drop/redirect the g_srcBand[b] term).
+
+        // Slider 1 -> inharmonicity, pot 1 -> master level.
+        {
+            float v = g_slider[0].load(std::memory_order_relaxed) + g_srcSlider[0].run(dt);
+            c.inharm = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+        }
+        // Pot 1 -> inharmonicity onset (partial below which the series stays
+        // harmonic). Master is host-side only; the module uses a fixed level.
+        c.inharmOnset = 0.5f * (g_pot[0].load(std::memory_order_relaxed) + 1.f);
+        c.master      = g_master.load(std::memory_order_relaxed);
+
+        // Sliders/pots 2..9 -> the 8 bands.
         for (int b = 0; b < foxtail::kNumBands; ++b) {
-            float base = g_band[b].load(std::memory_order_relaxed);
-            float g    = base + g_srcBand[b].run(dt);
+            const int s = b + kBandOffset;
+            float g = g_slider[s].load(std::memory_order_relaxed) + g_srcSlider[s].run(dt);
             c.bandGain[b] = g < 0.f ? 0.f : (g > 1.f ? 1.f : g);
             // Pots are centre-detented -1..1 on the panel; the DSP wants 0..1.
-            c.bandPan[b] = 0.5f * (g_pan[b].load(std::memory_order_relaxed) + 1.f);
+            c.bandPan[b] = 0.5f * (g_pot[s].load(std::memory_order_relaxed) + 1.f);
         }
 
         // The four shaper knobs, each summed with its analog CV jack.
@@ -193,7 +208,6 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         c.parity      = g_parity.load(std::memory_order_relaxed) ? 1.f : 0.f;
         c.pitchHz     = g_pitchHz.load(std::memory_order_relaxed);
         c.pitchCv     = g_srcPitch.run(dt) * kPitchMaxOct; // depth already applied
-        c.master      = g_master.load(std::memory_order_relaxed);
         g_pitchCvDbg.store(c.pitchCv, std::memory_order_relaxed);
 
         g_osc.Process(c, g_scratchL.data() + off, g_scratchR.data() + off, n);
@@ -204,8 +218,9 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         out[2 * i + 1] = g_scratchR[i];
     }
 
+    g_meter[0].store(g_slider[0].load(std::memory_order_relaxed), std::memory_order_relaxed);
     for (int b = 0; b < foxtail::kNumBands; ++b)
-        g_meter[b].store(g_osc.Meter(b), std::memory_order_relaxed);
+        g_meter[b + kBandOffset].store(g_osc.Meter(b), std::memory_order_relaxed);
 
     // Publish the partial snapshot for the viewer.
     // Controls are per-chunk now, so recover the last chunk's f0 from the atomics.
@@ -259,16 +274,16 @@ bool setControl(const std::string& id, float value) {
     // Sliders: "ampN" or "ampN.cv.*"
     if (startsWith(head, "amp")) {
         int idx = std::atoi(head.c_str() + 3); // "amp3" -> 3
-        if (idx < 0 || idx >= foxtail::kNumBands) return false;
-        if (dot == std::string::npos) { g_band[idx].store(value, std::memory_order_relaxed); return true; }
-        return g_srcBand[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
+        if (idx < 0 || idx >= kNumSliders) return false;
+        if (dot == std::string::npos) { g_slider[idx].store(value, std::memory_order_relaxed); return true; }
+        return g_srcSlider[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
     }
 
     // Pots: "panN" -> per-band pan. No CV jack on the hardware, so no cv route.
     if (startsWith(head, "pan") && dot == std::string::npos) {
         int idx = std::atoi(head.c_str() + 3);
-        if (idx < 0 || idx >= foxtail::kNumBands) return false;
-        g_pan[idx].store(value, std::memory_order_relaxed);
+        if (idx < 0 || idx >= kNumSliders) return false;
+        g_pot[idx].store(value, std::memory_order_relaxed);
         return true;
     }
     return false;
@@ -416,7 +431,7 @@ int main() {
     srv.Get("/meters", [](const httplib::Request&, httplib::Response& res) {
         std::string out;
         char buf[32];
-        for (int b = 0; b < foxtail::kNumBands; ++b) {
+        for (int b = 0; b < kNumSliders; ++b) {
             std::snprintf(buf, sizeof(buf), "%.4f", g_meter[b].load(std::memory_order_relaxed));
             if (b) out += ",";
             out += buf;
@@ -445,7 +460,8 @@ int main() {
         std::string out;
         out.reserve(16 * foxtail::kNumPartials);
         char buf[96];
-        std::snprintf(buf, sizeof(buf), "%.3f;%.1f;%.3f;%.3f", f0, kSampleRate * 0.5f, ws, we);
+        std::snprintf(buf, sizeof(buf), "%.3f;%.1f;%.3f;%.3f;%d;%d", f0, kSampleRate * 0.5f,
+                      ws, we, foxtail::kNumPartials, foxtail::kNumBands);
         out += buf;
         for (int k = 0; k < foxtail::kNumPartials; ++k) {
             std::snprintf(buf, sizeof(buf), ";%.2f:%.5f:%.5f", f[k], l[k], r[k]);

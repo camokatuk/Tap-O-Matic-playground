@@ -23,7 +23,10 @@ else ifeq ($(MODULE),foxtail)
   # Optimise for SPEED, not size. The additive engine's inner loop runs
   # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
   # scheduled, which is enough on its own to blow the audio budget.
-  OPT        = -O3
+  # -fno-math-errno is not cosmetic: without it every std::sqrt compiles to
+  # VSQRT *plus* a compare and a branch to libm's sqrtf to set errno, which is
+  # both a function call and the vcmpe/vmrs pipeline stall we work to avoid.
+  OPT        = -O3 -fno-math-errno -fno-trapping-math
 else
   $(error Unknown MODULE '$(MODULE)'. Use MODULE=tapomatic or MODULE=foxtail)
 endif

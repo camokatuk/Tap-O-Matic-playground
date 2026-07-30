@@ -15,8 +15,9 @@ experiments; the stock delay firmware is `TimeMachine.cpp` +
   fails with `daisysp-lgpl.h: No such file or directory`, run
   `git submodule update --init --recursive` inside `DaisyExamples/DaisySP`,
   then `make` inside `DaisySP/DaisySP-LGPL`.
-- `make` produces `build/Tap-O-Matic.bin`; flash via `make program-dfu` or
-  https://flash.daisy.audio (hold BOOT, tap RESET to enter DFU).
+- `make` produces `build/Tap-O-Matic.bin`; `make MODULE=foxtail` produces
+  `build/Fox-Tail.bin`. Flash via `make program-dfu` or https://flash.daisy.audio
+  (hold BOOT, tap RESET to enter DFU).
 - The user builds and flashes themselves; don't run `make` for them.
 
 ## The whine (investigated, closed)
@@ -28,45 +29,62 @@ noise-related. Executive summary: the delay firmware is already near its
 psychoacoustic optimum (do NOT re-attempt round-robin control scanning — it
 was tested and sounds worse); the excess coupling vs the original OAM Time
 Machine is a board-level hardware issue; a lightweight firmware reaches the
-hardware floor.
+hardware floor. Fox Tail's residual ~9.6 kHz tone is the callback-rate spur
+whinebug predicted as unavoidable, not a new problem.
 
-## Fox Tail — additive oscillator firmware + emulator (in progress)
+## Fox Tail — additive oscillator firmware + emulator
 
-Second firmware turning the module into an additive sine oscillator. Full
-living doc: `docs/claude/oscillator-impl.md`. Must obey the noise budget
-(see whinebug.md): no external RAM, constant work per callback, block size ≤ 5,
-never read the audio input.
+Second firmware: a 96-partial additive sine oscillator, hardware-verified end
+to end. Docs: `docs/claude/oscillator-impl.md` (repo architecture),
+`docs/claude/control-maps.md` (control map, engine, measured facts — the living
+doc), `docs/claude/pigments-harmonic-engine.md` (commercial reference). Obeys
+the whinebug noise budget: no external RAM, constant work per callback, block
+size 5, never read the audio input.
 
-**Build.** `make MODULE=foxtail` → `Fox-Tail.bin` (delay is default `make`).
-User builds/flashes firmware themselves.
-
-**Three-layer architecture** (the key idea — keep sources out of firmware):
-- `foxtail_dsp.h` (repo root): the shared, hardware-free DSP. **Must stay
+**Three layers** (the key idea — keep sources out of firmware):
+- `foxtail_dsp.h` (repo root): the shared, hardware-free engine. **Must stay
   C++14-safe** (firmware is `-std=gnu++14`; no `std::clamp`/`std::optional`).
-  `Controls` struct is the seam. `kNumPartials = 512` (the one CPU
-  knob), `kNumBands = 9` (9 sliders = 9 octave bands over that bank).
-- `FoxTail.cpp` (repo root): thin firmware — reads `time_machine_hardware.*`
-  into `Controls`, no source generators. Slider `b` = gain of octave band `b`
-  (`clamp(slider + levelCV, 0..1)`), pot `b` = that band's pan; TIME knob = base
-  pitch; V/OCT jack (`TIME_CV`, analog) = pitch CV in octaves; SPREAD/FEEDBACK/
-  HPF/LPF (+ their CV jacks) = the shaper; the two switches pick Cluster/Shepard
-  and aligned/random phase. The osc object is placed in DTCM (`DTCM_MEM_SECTION`).
-- `emulator/` (native audio + web UI, **emulator-only sources**): run with
-  `./emulator/run.sh` → http://localhost:4343 (miniaudio→CoreAudio + cpp-httplib;
-  builds via clang++ with no cmake needed). `emulator/src/sources.h` =
-  `Envelope`/`Oscillator` (dev stand-ins for patched modules); the firmware
-  never includes it. Web UI JS is split by theme (user prefers small, focused
-  files — keep it that way): `app.js` (core glue + panel controls +
-  persistence), `sources.js` (CV source cards; all slider ranges live in its
-  `RANGES` object), `labels.js` (label model + editor), `partials.js` (partial
-  viewer, fed by `/partials` — the engine's own per-partial state, never
-  recomputed in JS); shared via a small `FT` namespace + global
-  `send`/`saveVal`/`span`/`rowEl`.
+  `Controls` is the seam; `kNumPartials = 96` is the CPU dial (budget against
+  Cluster, the worst-case mode — see control-maps.md before changing it).
+- `FoxTail.cpp` (repo root): thin hardware shell — controls → `Controls`,
+  V/oct calibration, LED views, serial diagnostics. Osc object lives in DTCM.
+- `emulator/`: `./emulator/run.sh` → http://localhost:4343. Runs the identical
+  engine at the firmware's 5-frame block size — never weaken that equivalence.
+  `emulator/src/sources.h` = emulator-only CV sources (env/LFO stand-ins for
+  patched modules); the firmware never includes it. Web UI JS is split by theme
+  (user prefers small, focused files — keep it that way): `app.js`, `sources.js`
+  (ranges in `RANGES`), `labels.js`, `partials.js` (viewer draws the engine's
+  own `/partials` state, computes nothing).
 
-**Modulation.** General `CvSource` per target (pitch + each slider): off/osc/env
-+ depth. Slider CV sums into slider (clamped); pitch CV is octaves (`2^cv`). Osc
-is a bipolar sine LFO. Jack facts: analog CV jacks = TIME/SPREAD/FEEDBACK/HPF/LPF
-(pitch on TIME); **GATE jack is digital** (can't do analog CV).
+**Control map** (details + rationale in control-maps.md): slider 1 =
+inharmonicity (+CV), pot 1 = its onset; sliders/pots 2–9 = gain/pan of 8
+geometric bands; knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
+(window start/width, then per-mode params); switch 1 down = CLUSTER / up =
+SHEPARD; switch 2 up = ALL / down = ODD ONLY. GATE (digital-only jack) is still
+unassigned. Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up; pot 1
+reads opposite polarity to pots 2–9.
+
+**Hard rules learned on this hardware** (mechanisms in control-maps.md):
+- No libm/`std::sqrt`, no FP ternaries, no branches in per-partial paths.
+  Foxtail builds `-O3 -fno-math-errno -fno-trapping-math` (delay stays `-Os`).
+- Keep CPU headroom: overload starves the ADC, USB and LEDs, not just audio.
+  Check cost with objdump, not estimates — the per-BLOCK control pass dominates,
+  not the render loop.
+- **USB-only power leaves the SM's analog domain dead**: CV inputs rail at
+  ~0.99, audio silent, while pots/sliders keep working. Bench-test CVs and
+  audio only with rack power (USB may stay attached for serial).
+
+**V/oct calibration:** two-point 1V/3V, stored in QSPI. Power up with slider 1
+FULLY UP + switch 1 up + switch 2 down; flip switch 2 to capture each point.
+Runs with audio live and LEDs dark so captures match playback conditions
+(readings shift with load on this board). All produce/load paths go through
+`CalSane()` because `VoctCalibration::Record` divides by (v3−v1) unvalidated.
+Result on this unit: tracking within a few cents over 2 octaves.
+
+**Diagnostics:** `FOXTAIL_LED_MODE` in FoxTail.cpp (0 = normal + shaper-window
+peek, 1 = CPU bar, 2 = switch states); `FOXTAIL_SERIAL_LOG` prints one status
+line/s (CV values, voct raw/octaves, cpu avg/max). Tracking check: 1 V → 3 V
+patched must step the voct octaves by exactly 2.000.
 
 **Panel labels.** The SVG (`panel/Fox-Tail.svg`) is the source of truth.
 `emulator/controls.json` maps control id → `<tspan>` id. Edit labels live in the
@@ -75,16 +93,6 @@ emulator UI (writes the SVG + re-renders). Regenerate the PNG with
 **never hand-edit `emulator/web/Fox-Tail.png`**. Emulator control state persists
 in the browser's localStorage.
 
-**Control map + engine design:** `docs/claude/control-maps.md` (living doc);
-the commercial reference it borrows from is `docs/claude/pigments-harmonic-engine.md`.
-
-**Done:** 512-partial LUT engine (fixed-point phase, shared sine table, per-band
-piecewise-linear spectral envelope in log-frequency, per-band pan, Cluster +
-Shepard shaper, Nyquist fade, random phase, Hammond-style fixed gain staging);
-all 9 sliders + 9 pots + 5 knobs + 2 switches wired in both emulator and
-firmware; env+osc CV sources on pitch, every slider, and all four shaper knobs;
-partial viewer in the emulator.
-**Not done / open:** GATE has no function; **nothing has run on hardware yet** —
-the CPU budget (~76% at 512 partials, ~39% at 256) and the switch polarity are
-both unverified; whinebug's "additive osc will be OG-quiet" was measured
-near-idle, not at 76% load.
+**Open:** GATE assignment; listening-driven tuning of ranges/curves; panel
+relabeling once the map feels final (labels still show delay-era names);
+optional switch-direction swaps before labels are cut.

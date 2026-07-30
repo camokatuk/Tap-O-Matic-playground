@@ -21,42 +21,42 @@
         <!-- LEVEL SLIDERS (DRY + 8) -> harmonic amplitudes.
              The 9 column x-positions below are reused by the pots. -->
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp0" data-label="Band 1 (partial 1)" style="left:6.4%; top:22%; height:28%;" />
+               data-id="amp0" data-label="Slider 1 — inharmonicity" style="left:6.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp1" data-label="Band 2 (partials 2-3)" style="left:17.3%; top:22%; height:28%;" />
+               data-id="amp1" data-label="Slider 2 — band 1 gain" style="left:17.3%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp2" data-label="Band 3 (partials 4-7)" style="left:28.2%; top:22%; height:28%;" />
+               data-id="amp2" data-label="Slider 3 — band 2 gain" style="left:28.2%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp3" data-label="Band 4 (partials 8-15)" style="left:39.1%; top:22%; height:28%;" />
+               data-id="amp3" data-label="Slider 4 — band 3 gain" style="left:39.1%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp4" data-label="Band 5 (partials 16-31)" style="left:50.0%; top:22%; height:28%;" />
+               data-id="amp4" data-label="Slider 5 — band 4 gain" style="left:50.0%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp5" data-label="Band 6 (partials 32-63)" style="left:60.7%; top:22%; height:28%;" />
+               data-id="amp5" data-label="Slider 6 — band 5 gain" style="left:60.7%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp6" data-label="Band 7 (partials 64-127)" style="left:71.5%; top:22%; height:28%;" />
+               data-id="amp6" data-label="Slider 7 — band 6 gain" style="left:71.5%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp7" data-label="Band 8 (partials 128-255)" style="left:82.4%; top:22%; height:28%;" />
+               data-id="amp7" data-label="Slider 8 — band 7 gain" style="left:82.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp8" data-label="Band 9 (partials 256-511)" style="left:93.1%; top:22%; height:28%;" />
+               data-id="amp8" data-label="Slider 9 — band 8 gain" style="left:93.1%; top:22%; height:28%;" />
 
         <!-- TINY POTS (BAL / pan row) — aligned to the slider columns above. -->
-        <div class="tiny-pot" data-id="pan0" data-label="Pan band 1"
+        <div class="tiny-pot" data-id="pan0" data-label="Pot 1 — inharmonicity onset"
              data-min="-1" data-max="1" data-value="0" style="left:6.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan1" data-label="Pan band 2"
+        <div class="tiny-pot" data-id="pan1" data-label="Pot 2 — band 1 pan"
              data-min="-1" data-max="1" data-value="0" style="left:17.8%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan2" data-label="Pan band 3"
+        <div class="tiny-pot" data-id="pan2" data-label="Pot 3 — band 2 pan"
              data-min="-1" data-max="1" data-value="0" style="left:28.7%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan3" data-label="Pan band 4"
+        <div class="tiny-pot" data-id="pan3" data-label="Pot 4 — band 3 pan"
              data-min="-1" data-max="1" data-value="0" style="left:39.6%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan4" data-label="Pan band 5"
+        <div class="tiny-pot" data-id="pan4" data-label="Pot 5 — band 4 pan"
              data-min="-1" data-max="1" data-value="0" style="left:50.5%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan5" data-label="Pan band 6"
+        <div class="tiny-pot" data-id="pan5" data-label="Pot 6 — band 5 pan"
              data-min="-1" data-max="1" data-value="0" style="left:61.2%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan6" data-label="Pan band 7"
+        <div class="tiny-pot" data-id="pan6" data-label="Pot 7 — band 6 pan"
              data-min="-1" data-max="1" data-value="0" style="left:72.0%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan7" data-label="Pan band 8"
+        <div class="tiny-pot" data-id="pan7" data-label="Pot 8 — band 7 pan"
              data-min="-1" data-max="1" data-value="0" style="left:82.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan8" data-label="Pan band 9"
+        <div class="tiny-pot" data-id="pan8" data-label="Pot 9 — band 8 pan"
              data-min="-1" data-max="1" data-value="0" style="left:93.6%; top:54%;"></div>
 
         <!-- LARGER KNOBS. TIME is wired (fundamental); the rest are unassigned. -->
@@ -111,7 +111,7 @@
       <h1>Fox Tail <span>emulator</span></h1>
 
       <section class="strip">
-        <label>Master volume</label>
+        <label>Master volume (emulator only)</label>
         <input class="hslider" type="range" min="0" max="1" step="0.001" value="0.7"
                data-id="master" data-label="Master volume" />
       </section>

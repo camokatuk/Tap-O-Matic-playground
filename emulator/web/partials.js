@@ -90,10 +90,12 @@
     [100, 1000, 10000].forEach((hz) =>
       gridline(hz, hz >= 1000 ? hz / 1000 + "k" : String(hz), "rgba(255,255,255,0.07)")
     );
-    if (frame.f0 > 0) {
-      for (let b = 0; b <= 9; b++) {
-        gridline(frame.f0 * Math.pow(2, b), b < 9 ? "b" + (b + 1) : null,
-                 "rgba(120,170,255,0.16)", [2, 4]);
+    // Band centres. Bands are geometric over the whole bank, so slider b sits at
+    // ratio N^((b+0.5)/bands) — not at an octave unless bands == log2(N).
+    if (frame.f0 > 0 && frame.bands > 0) {
+      for (let b = 0; b < frame.bands; b++) {
+        const ratio = Math.pow(frame.nPartials, (b + 0.5) / frame.bands);
+        gridline(frame.f0 * ratio, "b" + (b + 1), "rgba(120,170,255,0.16)", [2, 4]);
       }
     }
     gridline(frame.nyquist, "Nyq", "rgba(255,80,80,0.35)", [4, 3]);
@@ -138,15 +140,17 @@
     const nyquist = parseFloat(parts[1]);
     const winStart = parseFloat(parts[2]);
     const winEnd = parseFloat(parts[3]);
-    const partials = new Float32Array((parts.length - 4) * 3);
+    const nPartials = parseInt(parts[4], 10);
+    const bands = parseInt(parts[5], 10);
+    const partials = new Float32Array((parts.length - 6) * 3);
     let n = 0;
-    for (let i = 4; i < parts.length; i++) {
+    for (let i = 6; i < parts.length; i++) {
       const t = parts[i].split(":");
       partials[n++] = parseFloat(t[0]);
       partials[n++] = parseFloat(t[1]);
       partials[n++] = parseFloat(t[2]);
     }
-    return { f0, nyquist, winStart, winEnd, partials };
+    return { f0, nyquist, winStart, winEnd, nPartials, bands, partials };
   }
 
   async function poll() {

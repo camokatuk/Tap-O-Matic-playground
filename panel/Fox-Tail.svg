@@ -1194,7 +1194,7 @@
          sodipodi:role="line"
          id="tspan11331"
          x="424.90289"
-         y="624.60083">PANT</tspan></text>
+         y="624.60083">PAN</tspan></text>
     <path
        style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="M 411.20507,619.76411 H 225.6626 l 0.0944,-6.05312"
@@ -1264,7 +1264,7 @@
          sodipodi:role="line"
          id="tspan4852"
          x="290.13028"
-         y="661.42627">CLUSTER</tspan></text>
+         y="661.42627">SHEPARD</tspan></text>
     <g
        id="g3086"
        transform="translate(0,16)">
@@ -1328,7 +1328,7 @@
          sodipodi:role="line"
          id="tspan4872"
          x="290.45081"
-         y="708.57794">SHEPARD</tspan></text>
+         y="708.57794">CLUSTER</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1562,7 +1562,7 @@
          sodipodi:role="line"
          id="tspan5659"
          x="560.41376"
-         y="661.39362">IN PHASE</tspan></text>
+         y="661.39362">ALL</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1572,7 +1572,7 @@
          sodipodi:role="line"
          id="tspan5679"
          x="560.73425"
-         y="708.54529">RND</tspan></text>
+         y="708.54529">ODD</tspan></text>
     <path
        style="display:inline;fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 560.1334,663.89739 0.0196,6.62889"

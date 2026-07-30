@@ -18,9 +18,9 @@
 //     accumulator reading one shared sine table. NOT IFFT-to-wavetable — that
 //     retunes only by rebuilding the table and is bursty, which the noise budget
 //     (docs/claude/whinebug.md) forbids.
-//   * 9 sliders are breakpoints of a piecewise-linear spectral envelope in
-//     log-frequency, over 9 geometric bands spanning the whole bank (a full
-//     octave each at 512 partials, narrower below that). 9 pots pan each band.
+//   * Band sliders are breakpoints of a piecewise-linear spectral envelope in
+//     log-frequency over geometric bands spanning the whole bank; the pots pan
+//     each band. Slider/pot 1 are inharmonicity amount and onset.
 //   * One shaper, two modes: Cluster and Shepard. Both retune partials inside a
 //     movable window, once per block.
 //   * Constant work per callback: every partial is always rendered, silent ones
@@ -34,21 +34,30 @@
 
 namespace foxtail {
 
-// The one knob to turn for CPU (see control-maps.md). The 9 bands rescale to
-// whatever this is — they are geometric, not hard-wired to octaves — so all 9
-// sliders stay live at any count. Band width is kNumPartials^(1/9): a full
-// octave at 512, 0.89 at 256, 0.78 at 128. The 1/sqrt(r) tilt keeps power equal
-// per band for *any* geometric banding, so nothing else has to change.
+// The one CPU lever. Bands are geometric (width kNumPartials^(1/kNumBands)),
+// so all band sliders stay live at any count, and the 1/sqrt(r) tilt keeps
+// power equal per band for any geometric banding.
 //
-// MEASURED ON HARDWARE (-O3, block size 5): 64 partials ~55% CPU, 128 runs
-// cleanly, 256 overruns. Most of that 55% is *fixed* per-callback cost, not the
-// partial bank — see control-maps.md. 128 is the shipping value until the fixed
-// overhead comes down.
-static constexpr int kNumPartials = 128;
+// MEASURED (-O3, block 5, H750): the budget must fit the WORST-CASE mode,
+// which is Cluster (~0.52%/partial over ~31% fixed, vs Shepard's ~0.43%).
+// At 96: Shepard ~72%, Cluster ~80%. At 128 Cluster overruns (>100%), and
+// overload does not just glitch audio — it starves the ADC, USB and LEDs.
+// Keep real headroom; 96 is the sweet spot. If more partials are ever wanted,
+// optimise Cluster's per-partial math first (incremental cluster-start instead
+// of floor()), not the render loop.
+static constexpr int kNumPartials = 96;
 
-static constexpr int kNumBands = 9; // 9 sliders / 9 pots / 9 LEDs
-static constexpr int kSineBits = 11;
-static constexpr int kSineSize = 1 << kSineBits; // 2048 entries, 8 KB
+// 8 bands, not 9: slider 1 and pot 1 are spent on inharmonicity amount and
+// onset, leaving sliders/pots 2..9 for the bands. 8 bands also happens to be
+// exact octaves if we ever reach 256 partials (bands == log2(partials)).
+static constexpr int kNumBands = 8;
+// No interpolation in the render loop: a 16384-entry table costs 64 KB of DTCM
+// (we have 128 KB and were using 10) and buys back a table load, an AND, a
+// uint->float convert and three FP ops per partial per sample. Phase truncation
+// to 14 bits puts the worst spur near -84 dBc per partial, which is far below
+// this board's own noise floor.
+static constexpr int kSineBits = 14;
+static constexpr int kSineSize = 1 << kSineBits;
 static constexpr float kTwoPi  = 6.283185307179586f;
 
 enum ShaperMode
@@ -63,22 +72,30 @@ struct Controls
 {
     // Slider b = gain of band b; pot b = its pan (0 = left, 1 = right).
     float bandGain[kNumBands] = {0.f};
-    float bandPan[kNumBands]  = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+    float bandPan[kNumBands]  = {0.5f, 0.5f, 0.5f, 0.5f,
                                  0.5f, 0.5f, 0.5f, 0.5f};
 
-    float pitchHz = 220.f; // TIME knob: fundamental in Hz
+    // Slider 1: inharmonicity. 0 = pure harmonic series; up bends the series
+    // stiff-string style (piano at low settings, bell/metallic high).
+    float inharm = 0.f;
+    // Pot 1: the partial below which the series stays perfectly harmonic, so
+    // the low partials hold pitch while the top goes metallic (cf. Pigments'
+    // Modal Warp "Range").
+    float inharmOnset = 0.f;
+
+    float pitchHz = 220.f; // knob 1: fundamental in Hz
     float pitchCv = 0.f;   // V/OCT jack, in OCTAVES (0 = none)
 
     // Shaper. Position and window mean the same thing in both modes; only
     // shapeA/shapeB change meaning, which is what lets a screenless panel
     // survive the mode switch.
     int   mode     = kModeCluster;
-    float position = 0.f; // SPREAD:   window start, exponential over 1..N
-    float window   = 1.f; // FEEDBACK: window width, exponential over 1..N
-    float shapeA   = 0.f; // HPF: cluster: partials per cluster (soft-step)
-                          //      shepard: phi, shift toward the next partial
-    float shapeB   = 0.f; // LPF: cluster: density
-                          //      shepard: gain of partials inside the window
+    float position = 0.f; // knob 2: window start, exponential over 1..N
+    float window   = 1.f; // knob 3: window width, exponential over 1..N
+    float shapeA   = 0.f; // knob 4: cluster: partials per cluster (soft-step)
+                          //         shepard: phi, shift toward the next partial
+    float shapeB   = 0.f; // knob 5: cluster: density
+                          //         shepard: window duck (0 = unity gain)
 
     // Switch 2. 0 = every partial, 1 = odd partials only (hollow, clarinet-ish).
     // Smoothed internally so throwing the switch doesn't step the waveform.
@@ -148,10 +165,8 @@ class FoxTailOsc
         sampleRate_ = sampleRate;
         nyquist_    = 0.5f * sampleRate;
 
-        for (int i = 0; i <= kSineSize; ++i) // +1 guard entry: no wrap test in the
-        {                                    // interpolation, table[i+1] is safe
+        for (int i = 0; i < kSineSize; ++i)
             sine_[i] = std::sin(kTwoPi * (float)i / (float)kSineSize);
-        }
 
         // ~5 ms one-pole. TWO coefficients, because the two things being smoothed
         // are updated at different rates: master runs per sample, the band gains
@@ -166,11 +181,6 @@ class FoxTailOsc
         const float lgN = FastLog2((float)kNumPartials);
         bandScale_ = (float)kNumBands / (lgN > 0.f ? lgN : 1.f); // guard N=1
 
-        // Meter reference: a band at full slider carries power
-        // kHeadroom^2 * ln(kNumPartials)/kNumBands, so this makes it read ~1.0.
-        meterScale_ = 1.f / (kHeadroom * std::sqrt(std::log((float)kNumPartials)
-                                                   / (float)kNumBands));
-
         masterSmooth_ = 0.f;
         paritySmooth_ = 0.f;
         winStart_     = 1.f;
@@ -180,8 +190,9 @@ class FoxTailOsc
         {
             bandLSmooth_[b] = 0.f;
             bandRSmooth_[b] = 0.f;
-            bandEnergy_[b]  = 0.f;
-            meter_[b]       = 0.f;
+            meter_[b]   = 0.f;
+            audible_[b] = true;
+            bandLoRatio_[b] = std::exp2(((float)b - 0.5f) / bandScale_);
         }
         // Random initial phases, always. Aligned phases make every partial peak
         // together (an impulse train): measured crest factor 6.8 and clipping at
@@ -218,10 +229,8 @@ class FoxTailOsc
             float r = 0.f;
             for (int k = 0; k < kNumPartials; ++k)
             {
-                const uint32_t p   = phase_[k];
-                const uint32_t idx = p >> (32 - kSineBits);
-                const float    fr  = (float)(p & kFracMask) * kFracScale;
-                const float    s   = sine_[idx] + (sine_[idx + 1] - sine_[idx]) * fr;
+                const uint32_t p = phase_[k];
+                const float    s = sine_[p >> (32 - kSineBits)];
                 l += s * ampL_[k];
                 r += s * ampR_[k];
                 phase_[k] = p + inc_[k]; // uint32 wraps for free
@@ -232,8 +241,18 @@ class FoxTailOsc
         }
     }
 
-    // Per-band level for the 9 panel LEDs (0..1).
+    // What the LEDs show: the band's own gain. Energy() is the *audible* energy
+    // in that band, which is a different question — a band can be turned up and
+    // still be silent because its partials have run past Nyquist. Showing energy
+    // on the LEDs looked wrong because the envelope legitimately spills into
+    // neighbouring bands, so one raised slider lit three lamps.
     float Meter(int band) const { return meter_[band]; }
+    // True when this band still has partials below Nyquist. Derived per band
+    // from the band's lower edge rather than by accumulating energy per partial
+    // — that accumulation cost ~10 instructions per partial per block and this
+    // is 8 comparisons per block. Approximate once the shaper moves partials
+    // around, which is fine for a lamp.
+    bool Audible(int band) const { return audible_[band]; }
 
     // --- Introspection, for the emulator's partial viewer ----------------------
     // The firmware never calls these, so they cost it nothing. Reading the real
@@ -248,6 +267,13 @@ class FoxTailOsc
     // Shaper window, in partial-index space (1 = fundamental).
     float WindowStart() const { return winStart_; }
     float WindowEnd() const { return winEnd_; }
+
+    // Which band a given partial index falls in, as a continuous position
+    // (0 = centre of band 0). Lets the firmware paint the window on the LEDs.
+    float BandOfRatio(float r) const
+    {
+        return r <= 1.f ? -0.5f : FastLog2(r) * bandScale_ - 0.5f;
+    }
 
   private:
     static constexpr float kGainSmoothSec = 0.005f;
@@ -264,8 +290,25 @@ class FoxTailOsc
     // a partial blinking off as it crosses Nyquist is a click.
     static constexpr float kNyqFadeFrac = 0.05f;
 
-    static constexpr uint32_t kFracMask  = (1u << (32 - kSineBits)) - 1u;
-    static constexpr float    kFracScale = 1.f / (float)(1u << (32 - kSineBits));
+    // Playable range for the effective fundamental (TIME knob x pitch CV). The
+    // ceiling keeps a railed CV input (+5 V = +5 octaves) from pushing every
+    // partial past Nyquist and silencing the module; 6 kHz still leaves the
+    // first couple of partials audible at the extreme.
+    static constexpr float kF0Min = 8.f;
+    static constexpr float kF0Max = 6000.f;
+
+    // Slider 1 at full stretches partial 128 to roughly 3x its harmonic position.
+    // Sized so the effect is unmistakable: at full, partial 16 is ~33% sharp
+    // and the top of the bank lands several times above its harmonic position.
+    // (Smaller values only move the top partials, which is barely audible.)
+    static constexpr float kInharmMax   = 2.0e-3f;
+    static constexpr float kOnsetOctaves = 6.f; // pot 1 -> onset partial 0..63
+
+    // Band crossfade: flat outside the middle kXfadeW of the gap between two
+    // slider centres, smoothstep across it.
+    static constexpr float kXfadeW   = 0.35f;
+    static constexpr float kXfadeLo  = 0.5f - kXfadeW * 0.5f;
+    static constexpr float kXfadeInv = 1.f / kXfadeW;
 
     static constexpr uint32_t kPhaseSeed = 0x9E3779B9u;
 
@@ -289,7 +332,14 @@ class FoxTailOsc
 
     void UpdateBlock(const Controls& c)
     {
-        const float f0      = c.pitchHz * std::exp2(c.pitchCv);
+        // Clamp the effective fundamental to a playable range. Without this, a
+        // railed CV input (a gate or +5V source patched into V/OCT reads as +5
+        // octaves) pushes every partial past Nyquist: the anti-alias fade mutes
+        // the whole bank and the module goes silent with all bands "starved" —
+        // which looks exactly like a crash. Railed input should mean "very high
+        // note", not "dead module".
+        float f0 = c.pitchHz * std::exp2(c.pitchCv);
+        f0       = std::fminf(std::fmaxf(f0, kF0Min), kF0Max);
         const float hzToInc = 4294967296.f / sampleRate_; // 2^32 / sr
         const float nyqFade = 1.f / (kNyqFadeFrac * nyquist_);
 
@@ -310,10 +360,20 @@ class FoxTailOsc
             // show up as a transient CPU spike once the whole bank is doing it.
             if (bandLSmooth_[b] < 1e-20f && bandLSmooth_[b] > -1e-20f) bandLSmooth_[b] = 0.f;
             if (bandRSmooth_[b] < 1e-20f && bandRSmooth_[b] > -1e-20f) bandRSmooth_[b] = 0.f;
-            bandEnergy_[b] = 0.f;
+            meter_[b]   = Clamp01(c.bandGain[b]);
+            audible_[b] = bandLoRatio_[b] * f0 < nyquist_;
         }
 
         paritySmooth_ += (Clamp01(c.parity) - paritySmooth_) * smoothCoefBlk_;
+
+        // Inharmonicity coefficient. Exponential so the musically useful low end
+        // (piano-ish stretch) gets most of the slider travel.
+        const float inh     = Clamp01(c.inharm);
+        const float inharmB = inh <= 0.f
+                                  ? 0.f
+                                  : kInharmMax * (std::exp2(inh * 8.f) - 1.f) / 255.f;
+        // Onset, exponential so the low partials get most of the travel.
+        const float onset = std::exp2(Clamp01(c.inharmOnset) * kOnsetOctaves) - 1.f;
 
         // Window, in partial-index space, exponential so the low partials (where
         // the ear cares) get most of the knob travel.
@@ -328,7 +388,12 @@ class FoxTailOsc
         // Mode params.
         const bool  shepard   = (c.mode == kModeShepard);
         const float phi       = Clamp01(c.shapeA);
-        const float winGain   = shepard ? Clamp01(c.shapeB) : 1.f;
+        // Shepard's knob 5 ducks the windowed partials, INVERTED so the knob at
+        // rest (fully CCW) means unity gain. As a plain gain, the knob sitting
+        // at zero silenced everything inside the window — with knob 3 wide that
+        // is the whole bank, so Shepard sounded "dead" at the exact physical
+        // knob positions where Cluster (knob 5 = density) sounded fine.
+        const float winGain   = shepard ? 1.f - Clamp01(c.shapeB) : 1.f;
         const float density   = Clamp01(c.shapeB);
         // Partials per cluster: soft-step 1..64. The integer part sets the
         // grouping and the fraction crossfades between the two groupings, so the
@@ -353,11 +418,9 @@ class FoxTailOsc
             const float idx = (float)(k + 1); // partial 1 is the fundamental
 
             // Trapezoid with smoothstep shoulders: 0 outside, 1 well inside.
-            float wIn  = Clamp01((idx - winStart) * invEdge);
-            float wOut = Clamp01((winEnd - idx) * invEdge);
-            wIn        = wIn * wIn * (3.f - 2.f * wIn);
-            wOut       = wOut * wOut * (3.f - 2.f * wOut);
-            const float w = wIn * wOut;
+            const float wLin = Clamp01(std::fminf((idx - winStart) * invEdge,
+                                                  (winEnd - idx) * invEdge));
+            const float w    = wLin * wLin * (3.f - 2.f * wLin);
 
             float shifted = idx;
             if (shepard)
@@ -371,7 +434,15 @@ class FoxTailOsc
                 shifted         = rLo + (rHi - rLo) * mFrac;
             }
 
-            const float ratio = idx + w * (shifted - idx);
+            float ratio = idx + w * (shifted - idx);
+
+            // Stiff-string inharmonicity: f_k = k*f0*sqrt(1 + B*(k-onset)^2),
+            // measured from `onset` upward so the bottom of the series stays in
+            // tune. Branchless on purpose (an if() here makes GCC clone the loop
+            // body). std::sqrt is safe ONLY because the build sets
+            // -fno-math-errno: that makes it a bare VSQRT, exact at B = 0.
+            const float kk = std::fmaxf(ratio - onset, 0.f);
+            ratio *= std::sqrt(1.f + inharmB * kk * kk);
             const float wGain = shepard ? (1.f + w * (winGain - 1.f)) : 1.f;
 
             const float freq = ratio * f0;
@@ -389,13 +460,22 @@ class FoxTailOsc
             // on frequency the ensemble before and after the wrap is identical
             // and nothing clicks. It also means you draw the Shepard envelope
             // with the sliders.
-            const float lg = FastLog2(ratio) * bandScale_; // 0 .. 9 across the bank
-            int         b  = (int)lg;
-            if (b < 0) b = 0;
+            // Each slider sits at the CENTRE of its band (hence the -0.5), and
+            // the crossfade between neighbours has a flat plateau in the middle.
+            // With plain edge-to-edge linear interpolation, raising one slider
+            // built a triangle that spilled a lot of energy into both
+            // neighbouring bands — real energy, so the meters were honest, but it
+            // made a single slider look and sound like three.
+            const float bp = FastLog2(ratio) * bandScale_ - 0.5f;
+            int         b  = (int)bp;
+            if (bp < 0.f) b = 0;
             if (b > kNumBands - 1) b = kNumBands - 1;
             int b1 = b + 1;
             if (b1 > kNumBands - 1) b1 = kNumBands - 1;
-            const float t = Clamp01(lg - (float)b);
+
+            float t = Clamp01(bp - (float)b);
+            t = Clamp01((t - kXfadeLo) * kXfadeInv);
+            t = t * t * (3.f - 2.f * t); // smoothstep shoulders, flat between
 
             const float gl = bandLSmooth_[b] + (bandLSmooth_[b1] - bandLSmooth_[b]) * t;
             const float gr = bandRSmooth_[b] + (bandRSmooth_[b1] - bandRSmooth_[b]) * t;
@@ -415,25 +495,18 @@ class FoxTailOsc
             const float par = (k & 1) ? (1.f - paritySmooth_) : 1.f;
 
             const float a = tilt * fade * wGain * par * kHeadroom;
-            float       al = gl * a;
-            float       ar = gr * a;
-            // Same denormal guard as above, for the same reason.
-            al = al < 1e-20f ? 0.f : al;
-            ar = ar < 1e-20f ? 0.f : ar;
-            ampL_[k] = al;
-            ampR_[k] = ar;
+            // No denormal guard here: the band-gain smoothers are flushed, so a
+            // denormal cannot originate upstream, and two compares per partial
+            // per block is not free.
+            ampL_[k] = gl * a;
+            ampR_[k] = gr * a;
 
             // Accumulate *audible* energy per band for the LEDs: this includes
             // the Nyquist fade and the shaper's window gain, so a band whose
             // partials have run off the top of the spectrum goes dark instead of
             // just reporting its slider position back to you.
-            bandEnergy_[b] += al * al + ar * ar;
         }
 
-        for (int b = 0; b < kNumBands; ++b)
-        {
-            meter_[b] = std::fminf(std::sqrt(bandEnergy_[b]) * meterScale_, 1.f);
-        }
     }
 
     float sampleRate_;
@@ -447,19 +520,19 @@ class FoxTailOsc
     float winStart_;
     float winEnd_;
     float bandScale_;  // log2(ratio) -> band position
-    float meterScale_; // band energy -> 0..1 for the LEDs
-    float bandEnergy_[kNumBands];
 
     float bandLSmooth_[kNumBands];
     float bandRSmooth_[kNumBands];
     float meter_[kNumBands];
+    bool  audible_[kNumBands];
+    float bandLoRatio_[kNumBands];
 
     uint32_t phase_[kNumPartials];
     uint32_t inc_[kNumPartials];
     float    ampL_[kNumPartials];
     float    ampR_[kNumPartials];
 
-    float sine_[kSineSize + 1];
+    float sine_[kSineSize];
 };
 
 } // namespace foxtail

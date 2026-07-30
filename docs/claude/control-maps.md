@@ -1,212 +1,165 @@
-# Fox Tail — control map (living doc)
+# Fox Tail — control map & engine (living doc)
 
-Mapping the panel onto a large partial bank. Companion to `oscillator-impl.md`
-(architecture), `whinebug.md` (noise budget), and `pigments-harmonic-engine.md`
-(the commercial reference this borrows from).
+The instrument design: how the panel maps onto the partial bank, and the engine
+that renders it. Companions: `oscillator-impl.md` (repo architecture),
+`whinebug.md` (noise budget), `pigments-harmonic-engine.md` (the commercial
+reference this borrows from). Everything below is implemented and
+hardware-verified unless marked open.
 
-## The panel we have to spend
+## The panel
 
-| Control | Count | Physical | CV? |
-|---|---|---|---|
-| Level sliders | 9 | big, gestural, in a row | yes, 1 each |
-| Pan pots | 9 | small, one under each slider | no |
-| TIME / SPREAD / FEEDBACK / HPF / LPF | 5 | knobs | yes, analog, 1 each |
-| Switches (`fbMode`, `filterPos`) | 2 | 2-position | — |
-| GATE | 1 | jack | digital only |
-| LEDs | 9 | one per slider | output |
-
-## The map
-
-**Sliders = gain, pots = pan.** The pots are silkscreened PAN, panning individual
-partials is a headline feature of the Pigments engine, pan stays meaningful even for
-a one-partial band (unlike any within-band parameter), and today's `foxtail_dsp.h`
-throws the stereo output away by writing the same sample to L and R.
-
-Brightness / partial count is **not** a knob — it's the top sliders. Pulling band 9
-down *is* the lowpass, with 9 bands of resolution and a CV jack per band.
-
-### How the 9 sliders address the bank
-
-**Octaves, always.** Constant-Q bands 1, 2–3, 4–7 … 256–511, tiling 512 exactly.
-The slider row literally draws the spectrum, and constant-Q ≈ how hearing bands
-things. Implemented as breakpoints of a piecewise-linear envelope in
-log-frequency rather than 9 rectangular blocks — the crossfade between adjacent
-bands is what keeps a partial's gain continuous as Cluster or Shepard glides it
-across a band edge.
-
-A `1/√r` tilt does the work of both the spectral slope and the per-band
-normalisation at once: band *b* holds 2^b partials at amplitude 2^(−b/2), so every
-octave carries equal power and all sliders up gives a pink-ish spectrum instead of
-something top-heavy.
-
-*Considered and dropped:* **Swarm** (slider = one harmonic, expanded to ~56
-detuned partials). With all four knobs committed to the shaper it had nowhere to
-get a detune-spread control, and without one it collapses to a single loud partial
-per harmonic. Cluster just below density 1 produces the same beating/chorus anyway.
-Dropping it freed switch A for random-phase.
-
-### Switch A — partial phase, aligned vs random
-
-### Switch B — Cluster vs Shepard
-
-Both are per-partial frequency shifts applied **within a movable window**, ~1 FMA per
-partial per block. The window is the point, not overhead: partials outside it stay
-anchored and hold the pitch stable while the ones inside go weird. Position and size
-are both CV-able, so the window itself is playable.
-
-| Knob | Cluster | Shepard |
+| Control | Function | CV? |
 |---|---|---|
-| TIME | pitch | pitch |
-| SPREAD | Position — partial where clustering starts | Position — base partial of window |
-| FEEDBACK | Clusters — window width, sets how many clusters | Win Size |
-| HPF | Partials per cluster (**soft-step**) | Phi — shift toward the next partial up |
-| LPF | Density — how far partials shift toward their cluster start | Gain inside the window |
+| Slider 1 | inharmonicity amount | yes |
+| Pot 1 | inharmonicity onset (partial below which the series stays harmonic) | — |
+| Sliders 2–9 | gain of bands 1–8 | yes, 1 each |
+| Pots 2–9 | pan of bands 1–8 | — |
+| Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
+| Knob 2 (was SPREAD) | shaper window start | yes |
+| Knob 3 (was FEEDBACK) | shaper window width | yes |
+| Knob 4 (was HPF) | cluster: partials per cluster (soft-step) / shepard: phi | yes |
+| Knob 5 (was LPF) | cluster: density / shepard: window duck (CCW = unity) | yes |
+| Switch 1 (left) | down = CLUSTER, up = SHEPARD | — |
+| Switch 2 (right) | up = ALL partials, down = ODD ONLY | — |
+| GATE | unassigned (digital only — cannot read analog CV) | — |
+| LED 1 | inharmonicity amount | — |
+| LEDs 2–9 | band levels / shaper-window peek | — |
 
-Only knobs 3–4 change meaning between modes; Position and Size are constant. That's
-what makes a screenless panel survive a mode switch. All four labels end up lying —
-the SVG label editor exists, relabel once the map settles.
+Hardware facts (measured): switch 1 reads HIGH when down, switch 2 HIGH when up
+(opposite polarities); pot 1 reads with opposite polarity to pots 2–9.
 
-- **Cluster** — `r_k = k·(1−density) + density·s_c`, s_c = start of k's cluster.
-  Density 1 collapses each cluster onto one frequency. Near 25/50/100% is the most
-  conventionally musical (Arturia's tip).
-- **Shepard** — `r_k = k + phi` inside the window. Phi + a ramp LFO into its CV jack
-  = a real Shepard tone, as a patch rather than a feature.
-  The illusion works because the envelope is sampled at the **shifted** frequency,
-  not at the partial index: at phi=1 partial *k* occupies the frequency partial
-  *k+1* had at phi=0, so the ensemble is identical across the wrap and nothing
-  clicks. Measured flat to 0.17% across a full phi sweep. Practically: open the
-  window wide and shape the sliders into a hump and you get the illusion — **you
-  draw the Shepard envelope with the sliders**. Narrow the window instead and it's
-  a shear on a slice, with everything outside anchored.
+## Design rationale
 
-Dropped from Pigments on purpose: **Window** and **Warp** modes (more mode-dependent
-knobs than the panel can carry), and the **Shape** section (2 spectrum slots × 12
-presets + morph/tilt) — nine sliders drawing the spectrum by hand beat 12 presets.
-**Parity** (continuous odd/even balance) is the one cheap omission worth a home.
-GATE (digital) is unassigned; could re-randomise phases.
+**Sliders draw the spectrum.** Bands are geometric with width
+`kNumPartials^(1/kNumBands)` — exact octaves when bands = log2(partials) (8 bands
+= octaves at 256). Constant-Q is what matters perceptually; octaves are just a
+round number. Each slider is a breakpoint of a piecewise-linear envelope in
+log-frequency, sitting at its band's **centre** with a flat plateau in the
+crossfade — edge-placed breakpoints made one slider light and sound like three.
+The crossfade is also what keeps a partial's gain continuous as the shaper
+glides it across a band edge.
 
-## Engine
+**Brightness is not a knob** — pulling the top sliders down *is* the lowpass,
+with per-band resolution and a CV jack each.
 
-**One shared sine LUT, N independent phase accumulators** — *not* IFFT-to-wavetable
-(Odessa-style), which retunes only by rebuilding the table and is bursty by
-construction. A magic-circle resonator is cheaper per sample but needs a sin/cos pair
-per partial per retune; Cluster and Shepard retune continuously (512 × 9600 blocks/s
-≈ 4.9 M transcendentals/s — dead on arrival). LUT + fixed-point phase retunes with one
-multiply. **LUT wins.**
+**Inharmonicity** (slider 1 + CV) is the stiff-string model
+`f_k = k·f0·√(1+B·(k−onset)²)` — piano-ish low, bell/metallic high — the one
+thing a filter fundamentally cannot fake. The onset pot keeps the low partials
+in tune while the top bends (cf. Pigments' Modal Warp "Range").
 
-- **Precomputed at init:** sine table (2048 × f32 = 8 KB), static ratio/band tables.
-- **Per block (9600 Hz):** `inc[k] = r_k·f0/sr`, `amp[k]`. 512 × 9600 = 4.9 M
-  partial-updates/s — the shaper's real cost, and constant work.
-- **Per sample:** phase accumulate (uint32, free wrap), table lookup + lerp, MAC.
-- State: 512 × 16 B = 8 KB.
+**The shaper (knobs 2–5, switch 1)** retunes partials inside a movable window,
+once per block. Partials outside stay anchored and hold the pitch while the ones
+inside go weird; position and width are CV-able, so the window itself is
+playable. Knobs 2–3 mean the same thing in both modes — that's what makes a
+screenless panel survive the mode switch. Window edges are tapered (smoothstep
+over 10% of width): a hard edge clicks as sweeping knob 2/3 drags partials
+across it.
 
-Budget at 480 MHz:
+- **Cluster** — `r_k = k·(1−density) + density·s_c` (s_c = start of k's
+  cluster). Density 1 collapses each cluster to one frequency; near 25/50/100%
+  is the most conventionally musical (Arturia's tip). Partials-per-cluster is
+  soft-stepped (integer part sets grouping, fraction crossfades groupings).
+- **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
+  at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
+  the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
+  a hump drawn on the sliders + a ramp LFO into knob 4's CV jack = a true
+  Shepard tone as a patch. Narrow window = spectral shear on a slice. Knob 5
+  ducks the window contents, inverted so knob-at-rest = unity (a plain gain
+  muted the whole window at rest, exactly where Cluster's density = 0 is
+  neutral).
 
-| | inner loop (~12 cyc) | per-block control (~15 cyc) | total |
-|---|---|---|---|
-| 512 partials | 61% | 15% | **~76%** — at the edge |
-| 256 partials | 31% | 8% | **~39%** — comfortable |
+**Random phase is unconditional**, not a switch: phases are seeded randomly at
+init for crest factor (measured 2.8 vs 6.8 aligned — aligned clips at full
+sliders). Phase is inaudible on a static spectrum (Ohm's law of acoustics), so
+it never earned a panel control.
 
-Cycle counts are optimistic (M7 is in-order; load-use hazards). Partial count is one
-`constexpr` in the shared header — measure on hardware, ship what fits.
-
-**No sub-rate tricks.** Halving the control-update rate, or round-robining partial
-updates across blocks, would buy ~7% — and both are banned by whinebug rule 2 ("no
-periodic structure slower than the callback rate; any sub-rate pattern becomes an
-audible comb at the pattern rate"). Full update every block or nothing. Partial count
-is therefore the *only* headroom lever.
-
-Dropping shaper *modes* saves flash, not cycles; only dropping retuning altogether
-would recover the 15%.
-
-### Memory (verified against libDaisy's linker scripts)
-
-| Region | Size | Notes |
-|---|---|---|
-| DTCMRAM `0x20000000` | 128 K | zero wait state, core-coupled, **not cached**, no bus arbitration |
-| AXI SRAM `0x24000000` | 512 K | **where `.data`/`.bss` land by default**; behind cache + AXI |
-| RAM_D2 `0x30000000` | 288 K | DMA buffers (`.sram1_bss`), where audio DMA lives |
-| ITCMRAM `0x00000000` | 64 K | region declared but **no output section maps to it** |
-| internal FLASH | 128 K | `.text` runs here, covered by I-cache |
-| SDRAM `0xC0000000` | 64 M | external — banned by whinebug rule 1 |
-| QSPI | 8 M | external serial |
-
-**Does a table in memory reintroduce whine? Not if it's in DTCM.** whinebug's finding
-is that the whine scales with *memory traffic per second* — but that was external
-SDRAM traffic: an off-chip FMC bus toggling wide address/data lines, plus refresh
-cycles, plus an external chip's own current bursts. DTCM is on-die, zero wait state,
-uncached, no arbitration: every sample costs identically, which is exactly the
-constant-current behaviour rule 2 asks for. It's the quiet choice, and 8 KB of table +
-8 KB of state in a 128 KB DTCM is nothing.
-
-The trap is the **default**: `.data`/`.bss` go to AXI SRAM, which is cached — so access
-time varies with hit/miss and refills burst over AXI. Use libDaisy's
-`DTCM_MEM_SECTION` (`daisy_core.h:31` → `.dtcmram_bss`) for the table and all partial
-state. Code can stay in flash; the inner loop is small enough to sit in I-cache after
-the first pass. Moving it to ITCM would need a custom output section added to the
-linker script — a later optimisation, not a prerequisite.
-
-**Caveat that must be measured, not reasoned about:** whinebug's "a lightweight
-additive oscillator will be OG-quiet on this board" was proven by a *near-idle*
-measurement. A 512-partial engine at ~76% CPU is not near-idle. The traffic is on-die
-and steady, which is the best case, but the average current draw is far higher than
-what was measured. If 512 measures worse than 256 on the bench, that's the answer.
-
-**Nyquist.** Harmonic 512 clears 24 kHz only below f0 = 47 Hz.
-
-| f0 | 27.5 | 55 | 110 | 220 | 440 | 880 |
-|---|---|---|---|---|---|---|
-| harmonics available | 872 | 436 | 218 | 109 | 54 | 27 |
-
-Partials above Nyquist must fade out, not switch off. Bands going dark as you play up
-is honest, and the LEDs can show it.
-
-## Soft-step ("semi-discrete") controls
-
-Discrete steps that keep doing something in between. No settled name; nearest are
-**fractional count** (integer part + frac gating the next element's gain — same math as
-fractional delay) and **apodization**. Pigments ships exactly this: the fractional part
-of its Partials knob fades the topmost partial in.
-
-Only worth it at small counts — fading partial 300 of 512 is inaudible. Used here for
-partials-per-cluster.
+*Considered and dropped:* Swarm mode (slider = one harmonic expanded into a
+detuned cluster — no knob left for its spread, and Cluster near density 1 gives
+the same beating); Pigments' Window/Warp shaper modes (more mode-dependent knobs
+than the panel carries) and its Shape presets (hand-drawn sliders beat 12
+presets); a master-level pot (fixed internal level instead).
 
 ## Gain staging
 
-Partials at different frequencies are incoherent → loudness follows power (Σa²), peak
-follows amplitude (Σa). They diverge by √N; that gap is the problem.
+Loudness follows power (Σa²), peak follows amplitude (Σa); they diverge by √N.
+Chosen: **fixed headroom budget, no dynamic normalisation** — the Hammond
+drawbar answer. Random initial phases (free ~9 dB of crest factor), `1/√r` tilt
+(equal power per geometric band *and* a pink-ish all-up spectrum in one
+multiply), scaled so all-up ≈ −16 dBFS RMS, cubic soft-clip as backstop.
+Rejected: power normalisation (raising one slider ducks the others — feels
+broken) and peak normalisation (audibly quietens as partials are added).
 
-1. **Phase dispersion — free, do it first.** All partials at phase 0 realign every
-   period → peak = Σa (an impulse train, worst possible crest factor). Random phases
-   drop peak from N·RMS to ≈√(2 ln N)·RMS. Phase is inaudible for a static spectrum
-   (Ohm's law of acoustics) → free headroom. Pigments ships this as a button, and it's
-   the eventual job of switch A.
-2. **1/k tilt baked into the series** — Σ converges, all-sliders-up = saw (useful home
-   position). Pigments' partials come in "in progressively decreasing volume" too.
-3. **Power normalisation** g = 1/√(Σa²) keeps loudness constant, but auto-gain makes one
-   slider duck the others — feels broken to play. **Peak normalisation** g = 1/Σa never
-   clips but audibly quietens as partials are added. Neither is used.
+Partials above Nyquist fade out over the top 5% rather than switching off; a
+band whose partials have all run off pulses its LED dimly (see below). At 48 kHz
+the harmonic ceiling is real: f0 = 220 Hz leaves ~109 partials, 880 Hz only 27.
 
-**Chosen:** fixed headroom budget, no dynamic normalisation. Per-band 1/√M weighting +
-1/k tilt, sized so everything-at-full ≈ −12 dBFS RMS, random initial phases, gentle
-tanh backstop. Sliders behave as the panel promises: more up = louder, graceful
-saturation at the top. This is the Hammond drawbar answer, which isn't a coincidence —
-a 9-slider additive panel *is* a drawbar organ.
+## Engine
+
+**One shared sine LUT + N independent fixed-point phase accumulators.** Not
+IFFT-to-wavetable (retunes only by rebuilding the table; bursty — whinebug
+forbids it), not resonators (retuning needs transcendentals per partial per
+block; the shaper retunes continuously). Per sample: phase add (uint32, free
+wrap), one table read, two MACs. Per block (9.6 kHz): the whole per-partial
+control pass — ratios, band lookup, tilt, Nyquist fade — which **dominates the
+cost** (~3× the render loop; verify with objdump before optimising anything).
+
+Table: 16384 × f32 (64 KB), **no interpolation** — phase truncation at 14 bits
+is ≈ −84 dBc, far under this board's floor; the interpolator cost more than the
+bigger table. Everything (state + table, ~66 KB) lives in **DTCM** via
+`DTCM_MEM_SECTION`: uncached, zero wait state, constant-current — the quiet
+choice. Default `.bss` is cached AXI SRAM, whose refills burst. Verify placement
+after linker changes: `arm-none-eabi-nm build/Fox-Tail.elf | grep -w osc` →
+`0x2000xxxx`.
+
+### CPU (measured, -O3, block 5, H750)
+
+Budget must fit the **worst-case mode = Cluster** (~0.52%/partial over ~31%
+fixed; Shepard ~0.43%/partial):
+
+| partials | Shepard | Cluster |
+|---|---|---|
+| 96 | ~72% | ~80% |
+| 128 | ~89% | **overruns** |
+
+**96 is the shipping value.** Overload does not merely glitch audio: the audio
+IRQ starves the ADC (CV reads freeze), USB serial, and the LEDs. Headroom keeps
+the *controls* alive. If more partials are ever wanted, the lever is Cluster's
+per-partial math (incremental cluster-start instead of `floor()`), not the
+render loop.
+
+### Hard-won rules (each cost a debugging session)
+
+1. **No libm in the per-partial path.** `std::sqrt` emits VSQRT (14 unpipelined
+   cycles) *plus* a `bl sqrtf` errno fallback unless the build sets
+   `-fno-math-errno -fno-trapping-math` (foxtail's Makefile does; the delay
+   stays stock `-Os`).
+2. **No FP ternaries in hot paths** — they compile to `vcmpe`+`vmrs` pipeline
+   stalls; `std::fminf/fmaxf` give single-instruction `vminnm/vmaxnm`. Removing
+   them was worth ~12 CPU points.
+3. **No branches in the per-partial loop** — GCC clones the loop body per path.
+4. **No sub-rate tricks** (half-rate control updates, round-robin partial
+   updates): whinebug rule 2 — any periodic structure below the callback rate
+   becomes an audible comb.
+5. **Estimates lie; objdump doesn't.** Per-partial cost was mis-attributed
+   three times by reasoning from C; the disassembly settled it each time.
+
+## LED behaviour
+
+LED 1 = inharmonicity. LEDs 2–9, two views, all main-loop (zero audio cost):
+
+- **Level view** (default): brightness = band gain. A band whose slider is up
+  but whose partials have all passed Nyquist **pulses dimly** — "turned down"
+  and "nothing left to play" must not look identical.
+- **Window peek**: moving knob 2 or 3 flips the row to showing the shaper
+  window (edges partially lit) until 1.5 s after the knob stops.
+
+`FOXTAIL_LED_MODE` in FoxTail.cpp: 1 = CPU load bar, 2 = switch-polarity check.
 
 ## Status
 
-**Implemented and bench-verified in the emulator; untested on hardware.**
-`foxtail_dsp.h` is the shared LUT engine; `FoxTail.cpp` and the emulator both run
-it. Bench results (native harness):
-
-| check | result |
-|---|---|
-| Cluster ratios, M=2 | `1, 1.5, 3, 3.5, 5, 5.5` at d=0.5; pairs onto odd harmonics at d=1 |
-| Shepard seamlessness | level flat to **0.17%** across a full phi sweep, phi=0 == phi=1 |
-| Crest factor | **3.18** random phase vs **6.81** aligned (aligned also clips) |
-| Level, all sliders up | −15.8 dBFS RMS, peak 0.51 |
-| Shaper sweep, 810 settings | all finite, worst peak 0.87 |
-| Object size | 16.1 KB — fits DTCM with room to spare |
-
-Open on hardware: the CPU budget, the switch polarity in `FoxTail.cpp` (pull-ups,
-guessed), and whether 76% load changes the noise picture.
+Hardware-verified end to end: engine, all 28 controls, both switches, per-band
+CV, V/oct (calibrated to a few cents over 2 octaves — see CLAUDE.md for the
+procedure and the power-supply gotcha), LEDs, serial diagnostics. Open items:
+GATE assignment, listening-driven tuning of ranges/curves, panel relabeling
+(SVG editor in the emulator), optional switch-direction swaps before labels are
+final.
