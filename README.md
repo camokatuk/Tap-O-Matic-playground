@@ -2,7 +2,7 @@
 
 This is a fork of [Tap-O-Matic DDV]([https://github.com/cormallen/tap-o-matic](https://github.com/abluenautilus/Tap-O-Matic-DDV)). I appreciate all of the work that's been put into this module and the OG Time machine. Thanks to OAM for making it open source to begin with. The entire Tap-O-Matic DDV readme is quoted further down.
 
-This is a personal playground for vibe coding alternative firmware for Tap-O-Matic and hopefully learn something in the process. Most of the new stuff at least at the moment is written by Claude, so avoid if you're averse to AI. **This has not been sanctioned by any of the past contributors**. None of it is commercial, there are no waranties or guarantees of any kind, so if you stumble upon this by chance and decide to do literally anything with these files, the outcome is on you! I would've kept this fork private if I could.
+This is a personal playground for vibe coding alternative firmware for Tap-O-Matic and hopefully learning something in the process. Most of the new stuff at least at the moment is written by Claude, so avoid if you're averse to AI. **This has not been sanctioned by any of the past contributors**. None of it is commercial, there are no waranties or guarantees of any kind, so if you stumble upon this by chance and decide to do literally anything with these files, the outcome is on you! I would've kept this fork private if I could.
 
 Currently finalizing Fox Tail which is a harmonic oscillator with Cluster and Shepard features entirely ripped off of Arturia's Pigments. The goal isn't to make a precise clone, but rather something that sounds vaguely similar. No precision of any kind here. Not quite tested yet, control ranges TBD, semi-usable. 
 
