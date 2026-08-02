@@ -20,6 +20,11 @@ ifeq ($(MODULE),tapomatic)
 else ifeq ($(MODULE),foxtail)
   TARGET     = Fox-Tail
   MODULE_SRC = FoxTail.cpp
+  # SERIAL_LOG=1 turns on the once-a-second status line (CV values, V/oct, CPU
+  # load) without editing FoxTail.cpp and remembering to revert it.
+  ifdef SERIAL_LOG
+    C_DEFS  += -DFOXTAIL_SERIAL_LOG=$(SERIAL_LOG)
+  endif
   # Optimise for SPEED, not size. The additive engine's inner loop runs
   # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
   # scheduled, which is enough on its own to blow the audio budget.

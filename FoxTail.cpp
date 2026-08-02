@@ -18,7 +18,7 @@
 //     audio is silent, pots keep working. Test CVs with rack power only.
 //   * ADC readings shift slightly with load (whinebug coupling), so V/oct is
 //     calibrated with audio running and LEDs dark — same conditions as playback.
-//   * Pot 1 (the DRY pot) reads with opposite polarity to pots 2..9.
+//   * out[0] is the RIGHT jack: the output pair is crossed below libDaisy.
 //
 #include "daisy_patch_sm.h"
 #include "time_machine_hardware.h"
@@ -56,37 +56,58 @@ using namespace oam::time_machine;
 
 TimeMachineHardware hw;
 
-static inline float Knob1() { return hw.GetTimeKnob(); }
-static inline float Knob2() { return hw.GetSpreadKnob(); }
-static inline float Knob3() { return hw.GetFeedbackKnob(); }
-static inline float Knob4() { return hw.GetHighpassKnob(); }
-static inline float Knob5() { return hw.GetLowpassKnob(); }
+// --- Control normalization seam ---------------------------------------------
+// Every panel read below goes through Slider() / PanPot() / BigKnob(), which
+// return a PANEL-NORMALIZED value: 0 = fully CCW / fully down, 1 = fully CW /
+// fully up, matching what the legend says. Keeping polarity in one place is
+// what stops a stray `1.0f - x` from turning up at a call site. All are
+// constant-argument at every call site, so they inline to nothing.
+static constexpr int kKnobCv[5] = {TIME_CV, SPREAD_CV, FEEDBACK_CV, HIGHPASS_CV, LOWPASS_CV};
+static constexpr int kKnob1Cv = TIME_CV; // V/OCT; named because calibration uses it
 
-static constexpr int kKnob1Cv = TIME_CV;
-static constexpr int kKnob2Cv = SPREAD_CV;
-static constexpr int kKnob3Cv = FEEDBACK_CV;
-static constexpr int kKnob4Cv = HIGHPASS_CV;
-static constexpr int kKnob5Cv = LOWPASS_CV;
+static inline float BigKnobRaw(int idx)
+{
+    switch (idx)
+    {
+        case 0: return hw.GetTimeKnob();
+        case 1: return hw.GetSpreadKnob();
+        case 2: return hw.GetFeedbackKnob();
+        case 3: return hw.GetHighpassKnob();
+        default: return hw.GetLowpassKnob();
+    }
+}
+
+static inline float BigKnob(int idx) { return 1.0f - BigKnobRaw(idx); }
+static inline float Slider(int idx) { return 1.0f - hw.GetLevelSlider(idx); }
+
+static inline float PanPot(int idx) { return hw.GetPanKnob(idx); }
 
 // Physical slider 1 is inharmonicity, pot 1 is fine tune; the bands start at 2.
 static constexpr int kBandOffset = 1;
 static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm)
 
 // --- Diagnostics ------------------------------------------------------------
-//   LED mode 0 = normal (per-band level + shaper-window peek)
-//   LED mode 1 = 9-segment CPU load bar (all nine lit = 100% = overrunning)
-//   LED mode 2 = LED 1 shows switch 1, LED 9 shows switch 2 (polarity checks)
-// The serial log prints one status line per second (calibration state, CV
-// values, CPU load) — the only precise instrument for retuning kNumPartials.
-// KEEP THE SERIAL LOG AT 0 FOR ANYTHING YOU LISTEN TO: the once-a-second USB
-// burst couples into the audio (whinebug.md), and PrintLine blocks long enough
-// to starve the ADC, which makes pot reads go stale. Its CPU figures also
-// include its own load — use LED mode 1 to retune kNumPartials.
-#define FOXTAIL_LED_MODE   0
+// One status line per second over USB: calibration state, CV values, and the
+// CPU load average/max — the instrument for retuning kNumPartials.
+//
+// KEEP THIS AT 0 FOR ANYTHING YOU LISTEN TO. The once-a-second USB burst
+// couples into the audio (whinebug.md), and PrintLine blocks long enough to
+// starve the ADC, which makes pot reads go stale. The CPU figures include the
+// logging's own load, so read them as an upper bound, not an exact cost.
+//
+// Also settable from the make line (`make MODULE=foxtail SERIAL_LOG=1`) so
+// taking a measurement never means editing this file and then remembering to
+// revert it.
+#ifndef FOXTAIL_SERIAL_LOG
 #define FOXTAIL_SERIAL_LOG 0
+#endif
 
+// Coarse pitch range. Exponential map: f = kFreqMin * (kFreqMax/kFreqMin)^t, so
+// the knob's centre lands on the GEOMETRIC mean — 63 Hz over 20..200, not 110.
+// One decade = 3.32 octaves, deliberately narrow: this is a fundamental for an
+// additive bank, and the partials, not the root, carry the top of the range.
 static constexpr float kFreqMin = 20.0f;
-static constexpr float kFreqMax = 2000.0f;
+static constexpr float kFreqMax = 200.0f;
 static constexpr float kMaster  = 0.7f;
 static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
 
@@ -135,7 +156,7 @@ static constexpr float    kKnobDeadband = 0.004f;
 Led  leds[kNumLeds];
 GPIO switch1; // left  — CLUSTER / SHEPARD
 GPIO switch2; // right — parity: all / odd only
-#if FOXTAIL_LED_MODE != 0 || FOXTAIL_SERIAL_LOG
+#if FOXTAIL_SERIAL_LOG
 CpuLoadMeter loadMeter;
 #endif
 
@@ -152,10 +173,10 @@ static inline float clampf(float x, float lo, float hi)
     return x < lo ? lo : (x > hi ? hi : x);
 }
 
-// Panel knob (inverted, as the delay firmware does) summed with its CV jack.
-static inline float knobPlusCv(float knob, int cvAdc)
+// Panel knob summed with its CV jack.
+static inline float knobPlusCv(int knobIdx)
 {
-    return clampf((1.0f - knob) + hw.GetAdcValue(cvAdc), 0.0f, 1.0f);
+    return clampf(BigKnob(knobIdx) + hw.GetAdcValue(kKnobCv[knobIdx]), 0.0f, 1.0f);
 }
 
 // Average the V/OCT jack over 1 s, LEDs dark. Both details matter: readings on
@@ -258,22 +279,20 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
                    AudioHandle::OutputBuffer out,
                    size_t                    size)
 {
-#if FOXTAIL_LED_MODE != 0 || FOXTAIL_SERIAL_LOG
+#if FOXTAIL_SERIAL_LOG
     loadMeter.OnBlockStart();
 #endif
 
     hw.ProcessAllControls();
 
-    // Sliders and pots 2..9 are inverted (up / clockwise = more).
-    controls.inharm = clampf((1.0f - hw.GetLevelSlider(0)) + hw.GetLevelCV(0), 0.0f, 1.0f);
+    controls.inharm = clampf(Slider(0) + hw.GetLevelCV(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
-    // Pot 1 -> fine tune, +-1 semitone, clockwise = sharp. (This pot reads with
-    // opposite polarity to pots 2..9, so the raw value is the clockwise one.)
-    // A small centre deadzone keeps 12 o'clock exactly in tune despite ADC
-    // noise; the remaining travel is rescaled to the full range.
+    // Pot 1 -> fine tune, +-1 semitone, clockwise = sharp. A small centre
+    // deadzone keeps 12 o'clock exactly in tune despite ADC noise; the
+    // remaining travel is rescaled to the full range.
     {
-        const float x  = clampf(hw.GetPanKnob(0), 0.0f, 1.0f) * 2.0f - 1.0f;
+        const float x  = clampf(PanPot(0), 0.0f, 1.0f) * 2.0f - 1.0f;
         const float ax = fabsf(x) - kFineDeadzone;
         controls.fineTune = ax <= 0.0f
                                 ? 0.0f
@@ -283,29 +302,35 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     for (int b = 0; b < foxtail::kNumBands; ++b)
     {
         const int s = b + kBandOffset;
-        controls.bandGain[b] = clampf((1.0f - hw.GetLevelSlider(s)) + hw.GetLevelCV(s),
-                                      0.0f, 1.0f);
-        controls.bandPan[b]  = clampf(1.0f - hw.GetPanKnob(s), 0.0f, 1.0f);
+        controls.bandGain[b] = clampf(Slider(s) + hw.GetLevelCV(s), 0.0f, 1.0f);
+        controls.bandPan[b]  = clampf(PanPot(s), 0.0f, 1.0f);
     }
 
-    // Knob 1: pitch, log sweep. V/OCT jack adds octaves through the stored
-    // calibration (scale/offset are in semitones, hence /12).
-    float t          = clampf(1.0f - Knob1(), 0.0f, 1.0f);
+    // Knob 1: pitch, exponential sweep (constant octaves per degree of
+    // rotation, so the detent sits at the geometric mean of the range, not the
+    // arithmetic one). V/OCT jack adds octaves through the stored calibration
+    // (scale/offset are in semitones, hence /12).
+    float t          = clampf(BigKnob(0), 0.0f, 1.0f);
     controls.pitchHz = kFreqMin * powf(kFreqMax / kFreqMin, t);
     controls.pitchCv = (g_voctScale * hw.GetAdcValue(kKnob1Cv) + g_voctOffset) * (1.0f / 12.0f);
 
-    controls.position = knobPlusCv(Knob2(), kKnob2Cv);
-    controls.window   = knobPlusCv(Knob3(), kKnob3Cv);
-    controls.shapeA   = knobPlusCv(Knob4(), kKnob4Cv);
-    controls.shapeB   = knobPlusCv(Knob5(), kKnob5Cv);
+    controls.position = knobPlusCv(1);
+    controls.window   = knobPlusCv(2);
+    controls.shapeA   = knobPlusCv(3);
+    controls.shapeB   = knobPlusCv(4);
 
     // Measured polarity: switch 1 reads HIGH when down, switch 2 HIGH when up.
     controls.mode   = switch1.Read() ? foxtail::kModeCluster : foxtail::kModeShepard;
     controls.parity = switch2.Read() ? 0.0f : 1.0f;
 
-    osc.Process(controls, out[0], out[1], size);
+    // out[0] is the physical RIGHT jack: the output pair is crossed below
+    // libDaisy (the delay compensates for the same swap inside panToVolume() in
+    // dsp.h instead). Correcting it here, at the one hardware seam, keeps
+    // "pan = 1 means right" true in the engine, the emulator, and anything
+    // stereo added later.
+    osc.Process(controls, out[1], out[0], size);
 
-#if FOXTAIL_LED_MODE != 0 || FOXTAIL_SERIAL_LOG
+#if FOXTAIL_SERIAL_LOG
     loadMeter.OnBlockEnd();
 #endif
 }
@@ -358,7 +383,7 @@ int main(void)
 
     osc.Init(hw.AudioSampleRate());
 
-#if FOXTAIL_LED_MODE != 0 || FOXTAIL_SERIAL_LOG
+#if FOXTAIL_SERIAL_LOG
     loadMeter.Init(hw.AudioSampleRate(), 5);
 #endif
 
@@ -367,7 +392,7 @@ int main(void)
     // Calibration runs AFTER StartAudio so captures happen under the same
     // electrical conditions as playback (readings shift with load, see above).
     System::Delay(150); // let the callback's control processing settle
-    if (!switch1.Read() && !switch2.Read() && (1.0f - hw.GetLevelSlider(0)) > 0.9f)
+    if (!switch1.Read() && !switch2.Read() && Slider(0) > 0.9f)
         RunVoctCalibration();
 
     // Drive LEDs from the main loop (not the audio IRQ) to avoid FPU
@@ -384,15 +409,6 @@ int main(void)
         uint32_t now = System::GetNow();
         if (now - last_led_ms >= 1)
         {
-#if FOXTAIL_LED_MODE == 1
-            const float load = loadMeter.GetMaxCpuLoad();
-            for (int i = 0; i < kNumLeds; i++)
-                leds[i].Set(clampf(load * kNumLeds - (float)i, 0.f, 1.f));
-#elif FOXTAIL_LED_MODE == 2
-            for (int i = 0; i < kNumLeds; i++) leds[i].Set(0.f);
-            leds[0].Set(switch1.Read() ? 1.f : 0.f);
-            leds[kNumLeds - 1].Set(switch2.Read() ? 1.f : 0.f);
-#else
             // Knobs 2 and 3 set the shaper window, which is otherwise invisible
             // on the module. Touching either flips the LED row to a window view
             // for kPeekMs after the knob stops moving.
@@ -434,7 +450,6 @@ int main(void)
                     leds[b + kBandOffset].Set(starved ? pulse : m);
                 }
             }
-#endif
             for (int i = 0; i < kNumLeds; i++) leds[i].Update();
             last_led_ms = now;
         }
@@ -463,7 +478,7 @@ int main(void)
                              " pos=" FLT_FMT(3) " win=" FLT_FMT(3)
                              " A=" FLT_FMT(3) " B=" FLT_FMT(3)
                              " f0=" FLT_FMT(1),
-                             FLT_VAR(3, hw.GetPanKnob(0)),
+                             FLT_VAR(3, PanPot(0)),
                              FLT_VAR(3, controls.fineTune),
                              FLT_VAR(3, controls.position),
                              FLT_VAR(3, controls.window),

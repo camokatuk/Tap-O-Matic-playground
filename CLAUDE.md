@@ -18,6 +18,8 @@ experiments; the stock delay firmware is `TimeMachine.cpp` +
 - `make` produces `build/Tap-O-Matic.bin`; `make MODULE=foxtail` produces
   `build/Fox-Tail.bin`. Flash via `make program-dfu` or https://flash.daisy.audio
   (hold BOOT, tap RESET to enter DFU).
+- `SERIAL_LOG=1` on the make line turns on Fox Tail's status line without
+  editing source.
 - The user builds and flashes themselves; don't run `make` for them.
 
 ## The whine (investigated, closed)
@@ -62,8 +64,18 @@ firmware); sliders/pots 2–9 = gain/pan of 8
 geometric bands; knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
 (window start/width, then per-mode params); switch 1 down = CLUSTER / up =
 SHEPARD; switch 2 up = ALL / down = ODD ONLY. GATE (digital-only jack) is still
-unassigned. Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up; pot 1
-reads opposite polarity to pots 2–9.
+unassigned. Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up. Every
+pot, slider and knob reads full 0..1 travel on a linear taper — assume the
+controls are good. Panel readings are normalized once in
+`Slider()`/`PanPot()`/`BigKnob()` (CW/up = 1); nothing downstream carries a bare
+`1.0f - x`.
+
+**`out[0]` is the physical RIGHT jack** — the channels are crossed below
+libDaisy. Corrected once in FoxTail.cpp's `osc.Process(controls, out[1],
+out[0], ...)` so `pan = 1` means right everywhere upstream (engine, emulator,
+and any future stereo feature). The delay compensates for the same swap deeper
+in, inside `panToVolume()` in dsp.h, whose comments contradict its own variable
+names — don't "fix" either one without re-deriving both.
 
 **Hard rules learned on this hardware** (mechanisms in control-maps.md):
 - No libm/`std::sqrt`, no FP ternaries, no branches in per-partial paths.
@@ -82,10 +94,11 @@ Runs with audio live and LEDs dark so captures match playback conditions
 `CalSane()` because `VoctCalibration::Record` divides by (v3−v1) unvalidated.
 Result on this unit: tracking within a few cents over 2 octaves.
 
-**Diagnostics:** `FOXTAIL_LED_MODE` in FoxTail.cpp (0 = normal + shaper-window
-peek, 1 = CPU bar, 2 = switch states); `FOXTAIL_SERIAL_LOG` prints one status
-line/s (CV values, voct raw/octaves, cpu avg/max). Tracking check: 1 V → 3 V
-patched must step the voct octaves by exactly 2.000.
+**Diagnostics:** `FOXTAIL_SERIAL_LOG` (or `make MODULE=foxtail SERIAL_LOG=1`)
+prints one status line/s: CV values, voct raw/octaves, cpu avg/max. It is the
+only CPU readout, and it includes its own USB load — read the figures as an
+upper bound when retuning `kNumPartials`. Tracking check: 1 V → 3 V patched
+must step the voct octaves by exactly 2.000. Keep it at 0 for listening.
 
 **Panel labels.** The SVG (`panel/Fox-Tail.svg`) is the source of truth.
 `emulator/controls.json` maps control id → `<tspan>` id. Edit labels live in the
@@ -94,6 +107,6 @@ emulator UI (writes the SVG + re-renders). Regenerate the PNG with
 **never hand-edit `emulator/web/Fox-Tail.png`**. Emulator control state persists
 in the browser's localStorage.
 
-**Open:** GATE assignment; listening-driven tuning of ranges/curves; panel
-relabeling once the map feels final (labels still show delay-era names);
-optional switch-direction swaps before labels are cut.
+**Open:** see `docs/claude/todo.md` (slider/pot rework, the f0 clamps). Also
+GATE assignment; panel relabeling once the map feels final (labels still show
+delay-era names); optional switch-direction swaps before labels are cut.
