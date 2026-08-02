@@ -58,3 +58,57 @@ absolute frequency, so it is unaffected.
 That is a code reading, not a test. Worth actually trying `kF0Min = 0.01f` and
 listening: a 96-partial bank at LFO rates is potentially a good drone/texture
 mode, but nothing has been verified by ear.
+
+## 0. Cluster gain: dynamic compensation failed twice — next is a knob LUT
+
+Goal (still valid): keep high-density Cluster from slamming the clip without
+robbing the normal modes of level.
+
+**Post-mortem of the "8k harmonics" bug** (hardware-only artifacts, Cluster
+mode, tones as loud as the signal itself, tracking whichever slider is up).
+Two implementations of dynamic gain-riding produced it and were rolled back:
+the stashed peak-predicting limiter and a power-matching compensation (both
+rode `master` with a block-rate gain derived from the engine's per-partial amp
+state). Dead hypotheses — do NOT re-test:
+
+- ~~ADC noise into Cluster's floor()~~ — backlash conditioning was built for
+  this and the bug survived it; `tests/noise_spur.cpp` injects ADC-scale noise
+  offline and shows nothing.
+- ~~Knob conditioning~~ — was its own separate bug (audible clicks: dense LSB
+  noise → sparse larger steps). Removed; raw knobs are clean with the
+  taper-outside fix. Do not bring it back.
+- ~~CPU starvation~~ — slimmed comp measured 79.8 avg / 82.9 max (same load as
+  the artifact-free build) and the overtones were unchanged and loud.
+
+What was never explained: how a smoothed block-rate gain on `master` produces
+full-level ~8 kHz tones on hardware while the emulator and an offline
+noise-injected sim stay clean. Whatever it is, it follows the amp-state →
+master feedback structure. Both attempts shared that; the next one must not.
+
+**Next approach (user's): a static lookup.** Gain as a function of the Cluster
+knob positions only (density, partials-per-cluster, window, position — all
+already smoothed control values), precomputed offline from `tests/clip_sweep.cpp`
+measurements into a small table baked into the firmware. No dependence on any
+runtime engine state. Interpolate the table, fold into `master` or `kHeadroom`.
+To build it: extend clip_sweep to dump RMS over a (B, A, win, pos) grid and
+fit/tabulate the inverse.
+
+## 4. Cluster mode vs Pigments: partial allocation, not a window
+
+User observation (to discuss before touching code):
+
+Pigments' harmonic engine has no window-size control. It has a number of
+clusters and a number of partials per cluster, and the two trade off against a
+fixed partial budget: turning both up *takes partials away from the other
+clusters*, so at the extreme the whole sound scoots down onto the fundamental.
+
+Our implementation instead shifts partials inside a fixed grid: with the window
+wide and both knobs up there are still two or more cluster fundamentals spread
+evenly across the spectrum until the very end of the travel. Consequence: the
+harsh high tail of the cluster sound is hard to get rid of or reuse — its
+energy stays parked up top instead of being reallocated downward.
+
+Possible direction: make density/size reallocate the bank toward the low
+clusters (Pigments-style budget) rather than only collapsing within clusters.
+Interacts with the spectral tilt (amplitude follows the *shifted* frequency).
+Reference: `docs/claude/pigments-harmonic-engine.md`. Emulator first.

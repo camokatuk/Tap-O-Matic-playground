@@ -77,6 +77,12 @@ and any future stereo feature). The delay compensates for the same swap deeper
 in, inside `panToVolume()` in dsp.h, whose comments contradict its own variable
 names — don't "fix" either one without re-deriving both.
 
+**Comments: keep them short.** A comment says why the code is there, nothing
+else. No worked examples, no measured-value narration, no "this used to be X and
+it broke" stories, no adjectives. If the reasoning is long, it belongs in
+`docs/claude/`, not above the line. Explain at length in chat instead — the
+answer to "why did you do it that way" is a reply, not a comment block.
+
 **Hard rules learned on this hardware** (mechanisms in control-maps.md):
 - No libm/`std::sqrt`, no FP ternaries, no branches in per-partial paths.
   Foxtail builds `-O3 -fno-math-errno -fno-trapping-math` (delay stays `-Os`).

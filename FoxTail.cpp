@@ -173,7 +173,10 @@ static inline float clampf(float x, float lo, float hi)
     return x < lo ? lo : (x > hi ? hi : x);
 }
 
-// Panel knob summed with its CV jack.
+// Panel knob summed with its CV jack. Raw on purpose: a backlash/one-pole
+// conditioner was tried here and audibly clicked — it turned dense LSB noise
+// into sparse larger steps. With the window taper outside the window, the raw
+// noise is inaudible (hardware-verified 2026-08).
 static inline float knobPlusCv(int knobIdx)
 {
     return clampf(BigKnob(knobIdx) + hw.GetAdcValue(kKnobCv[knobIdx]), 0.0f, 1.0f);

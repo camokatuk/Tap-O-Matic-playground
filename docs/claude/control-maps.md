@@ -28,6 +28,12 @@ hardware-verified unless marked open.
 Hardware facts (measured): switch 1 reads HIGH when down, switch 2 HIGH when up
 (opposite polarities); pot 1 reads with opposite polarity to pots 2–9.
 
+Knobs 2–5 (+ their CVs) are read RAW — do not re-add conditioning. A
+backlash-gate + one-pole conditioner was tried (to stop Cluster's `floor()`
+turning LSB noise into per-block frequency hops) and audibly clicked: it turns
+dense tiny noise into sparse larger steps. With the window taper outside the
+window, raw knob noise is inaudible (hardware A/B, 2026-08).
+
 ## Design rationale
 
 **Sliders draw the spectrum.** Bands are geometric with width
@@ -61,9 +67,14 @@ over 10% of width): a hard edge clicks as sweeping knob 2/3 drags partials
 across it.
 
 - **Cluster** — `r_k = k·(1−density) + density·s_c` (s_c = start of k's
-  cluster). Density 1 collapses each cluster to one frequency; near 25/50/100%
-  is the most conventionally musical (Arturia's tip). Partials-per-cluster is
-  soft-stepped (integer part sets grouping, fraction crossfades groupings).
+  cluster). Density is capped at 0.995; 0.9–1 is the useful beating zone.
+  Partials-per-cluster soft-steps up to `2^(log2 N + 0.5)`, so the knob can reach
+  a *single* cluster — at the old ceiling of 64 a second cluster start was
+  stranded high in the spectrum and could not be removed. The window taper sits
+  **outside** the window (a partial at `winStart` is already fully shifted);
+  inside, a full-width window left the top ~9 partials at ~20 kHz whatever the
+  other knobs did. `ClusterRatio` clamps its `floor()` at 0 — below `winStart` it
+  goes negative and puts the cluster start at `p − M`.
 - **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
   at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
   the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
@@ -94,9 +105,25 @@ Loudness follows power (Σa²), peak follows amplitude (Σa); they diverge by �
 Chosen: **fixed headroom budget, no dynamic normalisation** — the Hammond
 drawbar answer. Random initial phases (free ~9 dB of crest factor), `1/√r` tilt
 (equal power per geometric band *and* a pink-ish all-up spectrum in one
-multiply), scaled so all-up ≈ −16 dBFS RMS, cubic soft-clip as backstop.
-Rejected: power normalisation (raising one slider ducks the others — feels
-broken) and peak normalisation (audibly quietens as partials are added).
+multiply), scaled so all-up ≈ −16 dBFS RMS. Rejected: power normalisation
+(raising one slider ducks the others — feels broken) and peak normalisation
+(audibly quietens as partials are added). The loudest normal patch is **all
+sliders up with the pans off centre** — a hard-panned band is +3 dB per channel
+over a centred one; it peaks 0.73.
+
+Cluster at high density is the loud exception: tilt and band envelope are
+sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
+real power (~13 dB at full density), which lands on the clip. Two dynamic
+compensations were tried and ROLLED BACK — both produced loud hardware-only
+artifacts (see todo.md, the "8k harmonics" post-mortem). The open plan is a
+static knob-position → gain table; until then the clip owns it.
+
+**Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.** The
+old cubic had no linear region — every patch wore ~−35 dB of always-on
+waveshaping. Below the knee the output stage is now bit-exact; only Cluster
+crosses it. `tests/run.sh` (grid + 1500 random patches, firmware block size):
+42 of 4380 patches engage the clip, all Cluster at high density, worst −5.5 dB
+residual; every non-Cluster patch is untouched.
 
 Partials above Nyquist fade out over the top 5% rather than switching off; a
 band whose partials have all run off pulses its LED dimly (see below). At 48 kHz

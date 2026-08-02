@@ -140,13 +140,20 @@ static inline float FastRSqrt(float x)
 // partial per block, so it is worth the pedantry.
 static inline float Clamp01(float x) { return std::fminf(std::fmaxf(x, 0.f), 1.f); }
 
-// Cubic soft clip. Backstop only — the gain staging below is supposed to keep us
-// out of here most of the time.
+// Output clip: unity below the knee, parabolic to a hard cap at 2 - knee.
+// The knee sits above the loudest normal patch (peak 0.73, all sliders up and
+// hard-panned; tests/clip_sweep.cpp), so an oscillator patch passes bit-exact
+// and only Cluster's beat transients get caught. The old cubic had no linear
+// region and put ~-35 dB of waveshaping on everything.
+static constexpr float kClipKnee = 0.85f;
 static inline float SoftClip(float x)
 {
-    if (x >= 1.5f) return 1.f;
-    if (x <= -1.5f) return -1.f;
-    return x - (4.f / 27.f) * x * x * x;
+    const float ax = std::fabs(x);
+    if (ax <= kClipKnee) return x;
+    const float s = x < 0.f ? -1.f : 1.f;
+    if (ax >= 2.f - kClipKnee) return s;
+    const float u = ax - kClipKnee;
+    return s * (ax - u * u * (0.25f / (1.f - kClipKnee)));
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +293,9 @@ class FoxTailOsc
     // Cluster at high density, where collapsed partials sum coherently.
     static constexpr float kHeadroom = 1.f / 5.f;
 
+    // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
+    static constexpr float kDensityMax = 0.995f;
+
     // Partials fade out over the top 5% of the band rather than switching off:
     // a partial blinking off as it crosses Nyquist is a click.
     static constexpr float kNyqFadeFrac = 0.05f;
@@ -322,9 +332,12 @@ class FoxTailOsc
     // below 1 the members beat against each other, which is the chorus zone.
     // Density near 1/4, 1/2 and 1 lands on spectra that imply a subharmonic
     // (e.g. M=2, d=0.5 gives 1, 1.5, 3, 3.5 ... = multiples of f0/2).
-    static inline float ClusterRatio(float idx, float p, float m, float invM, float d)
+    // rel = max(idx - p, 0), hoisted by the caller: it is shared by both
+    // groupings of the soft-step, and the clamp is what keeps partials below the
+    // window start off a negative cluster start at p - M.
+    static inline float ClusterRatio(float idx, float rel, float p, float m, float invM, float d)
     {
-        const float c = std::floor((idx - p) * invM);
+        const float c = std::floor(rel * invM);
         const float s = p + c * m; // first partial of this cluster
         return idx + d * (s - idx);
     }
@@ -391,11 +404,12 @@ class FoxTailOsc
         // is the whole bank, so Shepard sounded "dead" at the exact physical
         // knob positions where Cluster (knob 5 = density) sounded fine.
         const float winGain   = shepard ? 1.f - Clamp01(c.shapeB) : 1.f;
-        const float density   = Clamp01(c.shapeB);
-        // Partials per cluster: soft-step 1..64. The integer part sets the
-        // grouping and the fraction crossfades between the two groupings, so the
-        // control keeps doing something between its steps.
-        const float mF   = std::exp2(Clamp01(c.shapeA) * 6.f);
+        const float density   = std::fminf(std::fmaxf(c.shapeB, 0.f), kDensityMax);
+        // Partials per cluster: soft-step, integer part sets the grouping and the
+        // fraction crossfades between groupings. Ceiling is half an octave past
+        // kNumPartials so the knob can reach a single cluster. logN, not log2():
+        // the latter promotes to double and calls libm once per block.
+        const float mF   = std::exp2(Clamp01(c.shapeA) * (logN + 0.5f));
         const float mLo  = std::floor(mF);
         const float mFrac = mF - mLo;
         const float mHi  = mLo + 1.f;
@@ -406,17 +420,21 @@ class FoxTailOsc
         // crossing it jumps frequency instantly, so sweeping SPREAD or FEEDBACK
         // drags partials across one after another and you hear a burst of clicks
         // — the "scratchy knob". The taper blends each partial's shift in and out
-        // instead, at the cost of one multiply.
+        // instead, at the cost of one multiply. It sits OUTSIDE the window: a
+        // partial at winStart is already fully shifted. Inside, a full-width
+        // window left the top ~9 partials stranded near Nyquist.
         const float edge    = winWidth * 0.1f > 1.f ? winWidth * 0.1f : 1.f;
         const float invEdge = 1.f / edge;
+        const float loEdge  = winStart - edge;
+        const float hiEdge  = winEnd + edge;
 
         for (int k = 0; k < kNumPartials; ++k)
         {
             const float idx = (float)(k + 1); // partial 1 is the fundamental
 
             // Trapezoid with smoothstep shoulders: 0 outside, 1 well inside.
-            const float wLin = Clamp01(std::fminf((idx - winStart) * invEdge,
-                                                  (winEnd - idx) * invEdge));
+            const float wLin = Clamp01(std::fminf((idx - loEdge) * invEdge,
+                                                  (hiEdge - idx) * invEdge));
             const float w    = wLin * wLin * (3.f - 2.f * wLin);
 
             float shifted = idx;
@@ -426,8 +444,9 @@ class FoxTailOsc
             }
             else
             {
-                const float rLo = ClusterRatio(idx, winStart, mLo, invLo, density);
-                const float rHi = ClusterRatio(idx, winStart, mHi, invHi, density);
+                const float rel = std::fmaxf(idx - winStart, 0.f);
+                const float rLo = ClusterRatio(idx, rel, winStart, mLo, invLo, density);
+                const float rHi = ClusterRatio(idx, rel, winStart, mHi, invHi, density);
                 shifted         = rLo + (rHi - rLo) * mFrac;
             }
 
@@ -495,13 +514,7 @@ class FoxTailOsc
             // per block is not free.
             ampL_[k] = gl * a;
             ampR_[k] = gr * a;
-
-            // Accumulate *audible* energy per band for the LEDs: this includes
-            // the Nyquist fade and the shaper's window gain, so a band whose
-            // partials have run off the top of the spectrum goes dark instead of
-            // just reporting its slider position back to you.
         }
-
     }
 
     float sampleRate_;
