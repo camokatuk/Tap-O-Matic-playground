@@ -25,6 +25,13 @@ else ifeq ($(MODULE),foxtail)
   ifdef SERIAL_LOG
     C_DEFS  += -DFOXTAIL_SERIAL_LOG=$(SERIAL_LOG)
   endif
+  # CV_NULL=1 captures the unpatched idle reading of every summing jack at
+  # startup and stores it, for when only the nulls need redoing (step 3 of the
+  # calibration gesture does the same). One-shot: flash it once with nothing
+  # patched, then build without it again.
+  ifdef CV_NULL
+    C_DEFS  += -DFOXTAIL_CV_NULL=$(CV_NULL)
+  endif
   # Optimise for SPEED, not size. The additive engine's inner loop runs
   # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
   # scheduled, which is enough on its own to blow the audio budget.

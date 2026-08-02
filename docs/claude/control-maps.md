@@ -3,7 +3,8 @@
 The instrument design: how the panel maps onto the partial bank, and the engine
 that renders it. Companions: `oscillator-impl.md` (repo architecture),
 `whinebug.md` (noise budget), `pigments-harmonic-engine.md` (the commercial
-reference this borrows from). Everything below is implemented and
+reference this borrows from), `archives.md` (closed investigations — only if you
+need the history behind a rule). Everything below is implemented and
 hardware-verified unless marked open.
 
 ## The panel
@@ -28,11 +29,23 @@ hardware-verified unless marked open.
 Hardware facts (measured): switch 1 reads HIGH when down, switch 2 HIGH when up
 (opposite polarities); pot 1 reads with opposite polarity to pots 2–9.
 
+**CV nulls.** The summing jacks (knob CVs 2–5, the nine level CVs) do not read
+0 unpatched — on this unit they sit at about −0.02, and since firmware adds the
+jack to the panel control and clamps, that bias ate the top 2.5% of every
+affected control's travel: a knob at full CW reached 0.975, which is why
+CLUSTER would not collapse to one cluster at max (density 0.973 leaves ~2.7% of
+the original spacing, tens of Hz of beating). The panel controls themselves are
+fine — knob 1 is the one big knob with no CV summed into its logged value, and
+it hits 0.000 and 1.000 exactly. Each jack's null is captured as step 3 of the
+calibration gesture (or alone via a one-shot `CV_NULL=1` build — see CLAUDE.md)
+and subtracted in `KnobCv()`/`LevelCv()`, the only two places a CV meets a panel
+control. Do not "fix" this by rescaling the knobs — that bakes the jack's bias
+into the panel.
+
 Knobs 2–5 (+ their CVs) are read RAW — do not re-add conditioning. A
-backlash-gate + one-pole conditioner was tried (to stop Cluster's `floor()`
-turning LSB noise into per-block frequency hops) and audibly clicked: it turns
-dense tiny noise into sparse larger steps. With the window taper outside the
-window, raw knob noise is inaudible (hardware A/B, 2026-08).
+backlash-gate + one-pole conditioner was tried and audibly clicked
+(`archives.md`); with the window taper outside the window, raw knob noise is
+inaudible.
 
 ## Design rationale
 
@@ -89,15 +102,8 @@ init for crest factor (measured 2.8 vs 6.8 aligned — aligned clips at full
 sliders). Phase is inaudible on a static spectrum (Ohm's law of acoustics), so
 it never earned a panel control.
 
-*Considered and dropped:* Swarm mode (slider = one harmonic expanded into a
-detuned cluster — no knob left for its spread, and Cluster near density 1 gives
-the same beating); Pigments' Window/Warp shaper modes (more mode-dependent knobs
-than the panel carries) and its Shape presets (hand-drawn sliders beat 12
-presets); a master-level pot (fixed internal level instead); an
-inharmonicity-onset pot (partial below which the series stays harmonic, cf.
-Pigments' Modal Warp "Range" — at high settings only quiet/ultrasonic partials
-bent, so the control read as dead; the k² law already protects the low end,
-and the pot went to fine tune).
+*Considered and dropped* (Swarm mode, Pigments' Window/Warp modes and Shape
+presets, a master-level pot, an inharmonicity-onset pot): `archives.md`.
 
 ## Gain staging
 
@@ -105,25 +111,22 @@ Loudness follows power (Σa²), peak follows amplitude (Σa); they diverge by �
 Chosen: **fixed headroom budget, no dynamic normalisation** — the Hammond
 drawbar answer. Random initial phases (free ~9 dB of crest factor), `1/√r` tilt
 (equal power per geometric band *and* a pink-ish all-up spectrum in one
-multiply), scaled so all-up ≈ −16 dBFS RMS. Rejected: power normalisation
-(raising one slider ducks the others — feels broken) and peak normalisation
-(audibly quietens as partials are added). The loudest normal patch is **all
-sliders up with the pans off centre** — a hard-panned band is +3 dB per channel
-over a centred one; it peaks 0.73.
+multiply), scaled so all-up ≈ −16 dBFS RMS. Power and peak normalisation were
+both rejected (`archives.md`). The loudest normal patch is **all sliders up with
+the pans off centre** — a hard-panned band is +3 dB per channel over a centred
+one; it peaks 0.73.
 
 Cluster at high density is the loud exception: tilt and band envelope are
 sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
 real power (~13 dB at full density), which lands on the clip. Two dynamic
 compensations were tried and ROLLED BACK — both produced loud hardware-only
-artifacts (see todo.md, the "8k harmonics" post-mortem). The open plan is a
+artifacts, and neither mechanism was ever explained (`archives.md`; do not build
+another gain that feeds engine amp state back into `master`). The open plan is a
 static knob-position → gain table; until then the clip owns it.
 
-**Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.** The
-old cubic had no linear region — every patch wore ~−35 dB of always-on
-waveshaping. Below the knee the output stage is now bit-exact; only Cluster
-crosses it. `tests/run.sh` (grid + 1500 random patches, firmware block size):
-42 of 4380 patches engage the clip, all Cluster at high density, worst −5.5 dB
-residual; every non-Cluster patch is untouched.
+**Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.**
+Below the knee the output stage is bit-exact; only Cluster crosses it, and only
+42 of 4380 test patches engage it at all.
 
 Partials above Nyquist fade out over the top 5% rather than switching off; a
 band whose partials have all run off pulses its LED dimly (see below). At 48 kHz

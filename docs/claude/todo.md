@@ -64,26 +64,12 @@ mode, but nothing has been verified by ear.
 Goal (still valid): keep high-density Cluster from slamming the clip without
 robbing the normal modes of level.
 
-**Post-mortem of the "8k harmonics" bug** (hardware-only artifacts, Cluster
-mode, tones as loud as the signal itself, tracking whichever slider is up).
-Two implementations of dynamic gain-riding produced it and were rolled back:
-the stashed peak-predicting limiter and a power-matching compensation (both
-rode `master` with a block-rate gain derived from the engine's per-partial amp
-state). Dead hypotheses — do NOT re-test:
-
-- ~~ADC noise into Cluster's floor()~~ — backlash conditioning was built for
-  this and the bug survived it; `tests/noise_spur.cpp` injects ADC-scale noise
-  offline and shows nothing.
-- ~~Knob conditioning~~ — was its own separate bug (audible clicks: dense LSB
-  noise → sparse larger steps). Removed; raw knobs are clean with the
-  taper-outside fix. Do not bring it back.
-- ~~CPU starvation~~ — slimmed comp measured 79.8 avg / 82.9 max (same load as
-  the artifact-free build) and the overtones were unchanged and loud.
-
-What was never explained: how a smoothed block-rate gain on `master` produces
-full-level ~8 kHz tones on hardware while the emulator and an offline
-noise-injected sim stay clean. Whatever it is, it follows the amp-state →
-master feedback structure. Both attempts shared that; the next one must not.
+**The constraint.** Two dynamic gain-riding attempts (a peak-predicting limiter,
+then a power-matching compensation) both produced loud hardware-only ~8 kHz
+artifacts and were rolled back. Both rode `master` with a block-rate gain
+derived from the engine's per-partial amp state, and the mechanism was never
+explained — so the next attempt must not have that feedback structure. Full
+post-mortem and the dead hypotheses (do not re-test them): `archives.md`.
 
 **Next approach (user's): a static lookup.** Gain as a function of the Cluster
 knob positions only (density, partials-per-cluster, window, position — all

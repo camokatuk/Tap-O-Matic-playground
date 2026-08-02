@@ -39,7 +39,10 @@ whinebug predicted as unavoidable, not a new problem.
 Second firmware: a 96-partial additive sine oscillator, hardware-verified end
 to end. Docs: `docs/claude/oscillator-impl.md` (repo architecture),
 `docs/claude/control-maps.md` (control map, engine, measured facts — the living
-doc), `docs/claude/pigments-harmonic-engine.md` (commercial reference). Obeys
+doc), `docs/claude/pigments-harmonic-engine.md` (commercial reference),
+`docs/claude/archives.md` (closed investigations and rolled-back attempts —
+read only if you need the history behind a rule, never for current behaviour).
+Obeys
 the whinebug noise budget: no external RAM, constant work per callback, block
 size 5, never read the audio input.
 
@@ -93,12 +96,23 @@ answer to "why did you do it that way" is a reply, not a comment block.
   ~0.99, audio silent, while pots/sliders keep working. Bench-test CVs and
   audio only with rack power (USB may stay attached for serial).
 
-**V/oct calibration:** two-point 1V/3V, stored in QSPI. Power up with slider 1
-FULLY UP + switch 1 up + switch 2 down; flip switch 2 to capture each point.
-Runs with audio live and LEDs dark so captures match playback conditions
-(readings shift with load on this board). All produce/load paths go through
-`CalSane()` because `VoctCalibration::Record` divides by (v3−v1) unvalidated.
-Result on this unit: tracking within a few cents over 2 octaves.
+**Calibration:** three steps, one QSPI record. Power up with slider 1 FULLY UP +
+switch 1 up + switch 2 down, then flip switch 2 to capture each step: (1) 1 V
+patched to V/OCT, (2) 3 V, (3) **everything unpatched** — the CV nulls. Runs
+with audio live and LEDs dark so captures match playback conditions (readings
+shift with load on this board). All produce/load paths go through
+`CalSane()`/`NullSane()`: `VoctCalibration::Record` divides by (v3−v1)
+unvalidated, and `PersistentStorage` has no version field, so an older QSPI
+image has garbage where the nulls now sit. A rejected pitch fit still saves the
+nulls. Result on this unit: tracking within a few cents over 2 octaves.
+
+**CV nulls:** the summing jacks idle at ~−0.02, not 0, and firmware adds jack to
+panel control and clamps — so that bias ate the top 2.5% of every affected
+control's travel. Applied in `KnobCv()`/`LevelCv()`, the only two places a CV
+meets a panel control. Besides step 3 above, `make MODULE=foxtail CV_NULL=1`
+captures them alone at startup (flash once with nothing patched, then build
+normally) so a unit that only needs nulls skips the pitch fit. Don't "fix"
+travel by rescaling the knobs; see control-maps.md.
 
 **Diagnostics:** `FOXTAIL_SERIAL_LOG` (or `make MODULE=foxtail SERIAL_LOG=1`)
 prints one status line/s: CV values, voct raw/octaves, cpu avg/max. It is the

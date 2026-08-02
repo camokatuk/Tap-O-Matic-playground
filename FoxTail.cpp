@@ -102,6 +102,15 @@ static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm
 #define FOXTAIL_SERIAL_LOG 0
 #endif
 
+// One-shot CV null capture at startup (`make MODULE=foxtail CV_NULL=1`), for
+// when only the nulls need redoing. Step 3 of the calibration gesture does the
+// same thing. Boot it ONCE with nothing patched, then build normally: left on,
+// it re-measures and rewrites QSPI every power-up and bakes in whatever happens
+// to be patched at the time.
+#ifndef FOXTAIL_CV_NULL
+#define FOXTAIL_CV_NULL 0
+#endif
+
 // Coarse pitch range. Exponential map: f = kFreqMin * (kFreqMax/kFreqMin)^t, so
 // the knob's centre lands on the GEOMETRIC mean — 63 Hz over 20..200, not 110.
 // One decade = 3.32 octaves, deliberately narrow: this is a fundamental for an
@@ -111,8 +120,9 @@ static constexpr float kFreqMax = 200.0f;
 static constexpr float kMaster  = 0.7f;
 static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
 
-// --- V/oct calibration ------------------------------------------------------
-// Two-point (1V/3V) via libDaisy's VoctCalibration, persisted to QSPI.
+// --- Calibration ------------------------------------------------------------
+// Two-point (1V/3V) V/oct via libDaisy's VoctCalibration, plus the CV nulls.
+// One QSPI record.
 //
 // To calibrate: power up with slider 1 FULLY UP and both switches away from
 // their HIGH position (switch 1 up, switch 2 down) — the slider is part of the
@@ -120,20 +130,38 @@ static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
 // The LEDs chase to confirm calibration mode, and audio runs (deliberately —
 // captures must happen under playback load, see MeasureVoct).
 //   1. Patch a steady 1 V into the V/OCT jack, flip switch 2 -> captures.
-//   2. Patch 3 V, flip switch 2 again -> captures, saves, resumes normally.
+//   2. Patch 3 V, flip switch 2 again -> captures.
+//   3. Unpatch everything, flip switch 2 again -> captures the CV nulls, saves,
+//      resumes normally.
 // Any other power-up state just loads the stored values.
+//
+// The nulls can also be captured on their own (FOXTAIL_CV_NULL), so a unit that
+// only needs those does not have to redo the pitch fit.
+static constexpr int kNumKnobCv  = 5;
+static constexpr int kNumLevelCv = foxtail::kNumBands + 1;
+
 struct CalData
 {
     float scale;
     float offset;
-    bool  operator!=(const CalData& o) const
+    // Unpatched idle reading of each summing jack, subtracted on every read.
+    // knobCvNull[0] is V/OCT and stays unused: `offset` already absorbs it.
+    float knobCvNull[kNumKnobCv];
+    float levelCvNull[kNumLevelCv];
+
+    bool operator!=(const CalData& o) const
     {
-        return scale != o.scale || offset != o.offset;
+        if (scale != o.scale || offset != o.offset) return true;
+        for (int i = 0; i < kNumKnobCv; ++i)
+            if (knobCvNull[i] != o.knobCvNull[i]) return true;
+        for (int i = 0; i < kNumLevelCv; ++i)
+            if (levelCvNull[i] != o.levelCvNull[i]) return true;
+        return false;
     }
 };
 
-// Defaults reproduce the uncalibrated behaviour (adc * 5 octaves).
-static constexpr CalData kCalDefault = {60.0f, 0.0f};
+// Defaults reproduce the uncalibrated behaviour (adc * 5 octaves, no nulling).
+static constexpr CalData kCalDefault = {60.0f, 0.0f, {0.f}, {0.f}};
 
 // VoctCalibration::Record does no validation and divides by (v3 - v1): bad
 // captures yield an infinite scale that would persist in QSPI. Every path that
@@ -144,9 +172,20 @@ static bool CalSane(float scale, float offset)
            && scale < 600.0f && offset > -600.0f && offset < 600.0f;
 }
 
+// A real jack null is a couple of percent. This also rejects the garbage that
+// a pre-nulling QSPI image leaves in the fields appended to CalData, which
+// PersistentStorage cannot detect (it has no version or checksum).
+static constexpr float kCvNullMax = 0.1f;
+static bool NullSane(float n)
+{
+    return std::isfinite(n) && n > -kCvNullMax && n < kCvNullMax;
+}
+
 PersistentStorage<CalData> calStore(hw.qspi);
 float g_voctScale  = kCalDefault.scale;
 float g_voctOffset = kCalDefault.offset;
+float g_knobCvNull[kNumKnobCv]   = {0.f};
+float g_levelCvNull[kNumLevelCv] = {0.f};
 
 // Shaper-window LED peek: how long the row keeps showing the window after knob
 // 2/3 stops moving. The timer resets on every movement.
@@ -173,13 +212,27 @@ static inline float clampf(float x, float lo, float hi)
     return x < lo ? lo : (x > hi ? hi : x);
 }
 
+// CV jacks read a small nonzero value unpatched (~-0.02 on this unit), and it
+// is subtracted here, in the only two places a CV is summed with a panel
+// control. Without it the bias eats the top of the panel's travel: a knob at
+// full CW reached 0.975, which is what kept CLUSTER from collapsing at max.
+static inline float KnobCv(int knobIdx)
+{
+    return hw.GetAdcValue(kKnobCv[knobIdx]) - g_knobCvNull[knobIdx];
+}
+
+static inline float LevelCv(int idx)
+{
+    return hw.GetLevelCV(idx) - g_levelCvNull[idx];
+}
+
 // Panel knob summed with its CV jack. Raw on purpose: a backlash/one-pole
 // conditioner was tried here and audibly clicked — it turned dense LSB noise
 // into sparse larger steps. With the window taper outside the window, the raw
 // noise is inaudible (hardware-verified 2026-08).
 static inline float knobPlusCv(int knobIdx)
 {
-    return clampf(BigKnob(knobIdx) + hw.GetAdcValue(kKnobCv[knobIdx]), 0.0f, 1.0f);
+    return clampf(BigKnob(knobIdx) + KnobCv(knobIdx), 0.0f, 1.0f);
 }
 
 // Average the V/OCT jack over 1 s, LEDs dark. Both details matter: readings on
@@ -205,35 +258,104 @@ static float MeasureVoct()
     return (float)(acc / (double)kN);
 }
 
-// Blocking two-point calibration; audio is already running.
-static void RunVoctCalibration()
+// Knob CVs only: the level jacks would overrun the USB TX buffer, and these are
+// the four that show up in the pos/win/A/B log line.
+static void PrintCvNulls()
+{
+    hw.PrintLine("CV nulls: knob " FLT_FMT(3) " " FLT_FMT(3) " " FLT_FMT(3) " "
+                 FLT_FMT(3),
+                 FLT_VAR(3, g_knobCvNull[1]), FLT_VAR(3, g_knobCvNull[2]),
+                 FLT_VAR(3, g_knobCvNull[3]), FLT_VAR(3, g_knobCvNull[4]));
+}
+
+// Persist every calibrated value from its global. One writer, so a partial
+// calibration can never leave QSPI holding a mix of old and new fields.
+static void SaveCal()
+{
+    CalData& cd = calStore.GetSettings();
+    cd.scale    = g_voctScale;
+    cd.offset   = g_voctOffset;
+    for (int i = 0; i < kNumKnobCv; ++i) cd.knobCvNull[i] = g_knobCvNull[i];
+    for (int i = 0; i < kNumLevelCv; ++i) cd.levelCvNull[i] = g_levelCvNull[i];
+    calStore.Save();
+}
+
+// Average every summing jack at once, same conditions as MeasureVoct. Anything
+// outside kCvNullMax is a patched jack, not a null, and is left at zero, so a
+// forgotten cable costs that one jack its nulling and nothing else.
+static void MeasureCvNulls()
+{
+    for (int i = 0; i < kNumLeds; ++i)
+    {
+        leds[i].Set(0.f);
+        leds[i].Update();
+    }
+    System::Delay(100);
+
+    double    knob[kNumKnobCv]   = {0.0};
+    double    level[kNumLevelCv] = {0.0};
+    const int kN                 = 1000;
+    for (int i = 0; i < kN; ++i)
+    {
+        for (int k = 0; k < kNumKnobCv; ++k) knob[k] += hw.GetAdcValue(kKnobCv[k]);
+        for (int l = 0; l < kNumLevelCv; ++l) level[l] += hw.GetLevelCV(l);
+        System::Delay(1);
+    }
+
+    for (int k = 0; k < kNumKnobCv; ++k)
+    {
+        const float n   = (float)(knob[k] / (double)kN);
+        g_knobCvNull[k] = NullSane(n) ? n : 0.f;
+    }
+    for (int l = 0; l < kNumLevelCv; ++l)
+    {
+        const float n    = (float)(level[l] / (double)kN);
+        g_levelCvNull[l] = NullSane(n) ? n : 0.f;
+    }
+
+    PrintCvNulls();
+}
+
+// Block until switch 2 changes state, with an LED chase showing which step we
+// are on (step+1 lamps lit solid).
+static void WaitForCapture(int step)
+{
+    const bool start = switch2.Read();
+    uint32_t   t     = 0;
+    while (switch2.Read() == start)
+    {
+        uint32_t now = System::GetNow();
+        if (now - t >= 60)
+        {
+            t = now;
+            const int lit = (int)((now / 120) % (uint32_t)kNumLeds);
+            for (int i = 0; i < kNumLeds; i++)
+                leds[i].Set((i <= step) ? 1.f : (i == lit ? 0.15f : 0.f));
+        }
+        for (int i = 0; i < kNumLeds; i++) leds[i].Update();
+        System::Delay(1);
+    }
+}
+
+// Blocking three-step calibration; audio is already running.
+static void RunCalibration()
 {
     hw.PrintLine("V/oct calibration: patch 1V, flip switch 2.");
 
     float v[2] = {0.f, 0.f};
     for (int step = 0; step < 2; ++step)
     {
-        // Wait for switch 2 to change state, with an LED chase showing which
-        // step we are on (step+1 lamps lit solid).
-        const bool start = switch2.Read();
-        uint32_t   t     = 0;
-        while (switch2.Read() == start)
-        {
-            uint32_t now = System::GetNow();
-            if (now - t >= 60)
-            {
-                t = now;
-                const int lit = (int)((now / 120) % (uint32_t)kNumLeds);
-                for (int i = 0; i < kNumLeds; i++)
-                    leds[i].Set((i <= step) ? 1.f : (i == lit ? 0.15f : 0.f));
-            }
-            for (int i = 0; i < kNumLeds; i++) leds[i].Update();
-            System::Delay(1);
-        }
+        WaitForCapture(step);
         v[step] = MeasureVoct();
         hw.PrintLine("  captured %dV -> " FLT_FMT(5), step ? 3 : 1, FLT_VAR(5, v[step]));
         if (step == 0) hw.PrintLine("Now patch 3V and flip switch 2 again.");
     }
+
+    // Step 3, the CV nulls. Last because it is the only step that wants the
+    // patch cables OUT, and because a rejected pitch fit must not cost it.
+    hw.PrintLine("Now UNPATCH every jack and flip switch 2 to capture CV nulls.");
+    WaitForCapture(2);
+    MeasureCvNulls();
 
     float scale = 0.f, offset = 0.f;
     if (std::fabs(v[1] - v[0]) > 0.02f)
@@ -245,10 +367,12 @@ static void RunVoctCalibration()
 
     if (!CalSane(scale, offset))
     {
-        // Refuse to store nonsense; keep the previous values and flash
-        // alternating lamps so the failure is unmistakable.
+        // Refuse to store nonsense; keep the previous pitch values and flash
+        // alternating lamps so the failure is unmistakable. The nulls are
+        // independent of the fit, so they are still worth keeping.
         hw.PrintLine("calibration REJECTED (readings too close or fit out of "
-                     "range) — keeping previous values");
+                     "range) — keeping previous values, nulls saved");
+        SaveCal();
         for (int n = 0; n < 6; n++)
         {
             for (int i = 0; i < kNumLeds; i++)
@@ -263,11 +387,7 @@ static void RunVoctCalibration()
 
     g_voctScale  = scale;
     g_voctOffset = offset;
-
-    CalData& cd = calStore.GetSettings();
-    cd.scale    = g_voctScale;
-    cd.offset   = g_voctOffset;
-    calStore.Save();
+    SaveCal();
 
     hw.PrintLine("saved: scale=" FLT_FMT(4) " offset=" FLT_FMT(4),
                  FLT_VAR(4, g_voctScale), FLT_VAR(4, g_voctOffset));
@@ -288,7 +408,7 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
 
     hw.ProcessAllControls();
 
-    controls.inharm = clampf(Slider(0) + hw.GetLevelCV(0), 0.0f, 1.0f);
+    controls.inharm = clampf(Slider(0) + LevelCv(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
     // Pot 1 -> fine tune, +-1 semitone, clockwise = sharp. A small centre
@@ -305,7 +425,7 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     for (int b = 0; b < foxtail::kNumBands; ++b)
     {
         const int s = b + kBandOffset;
-        controls.bandGain[b] = clampf(Slider(s) + hw.GetLevelCV(s), 0.0f, 1.0f);
+        controls.bandGain[b] = clampf(Slider(s) + LevelCv(s), 0.0f, 1.0f);
         controls.bandPan[b]  = clampf(PanPot(s), 0.0f, 1.0f);
     }
 
@@ -382,6 +502,15 @@ int main(void)
             g_voctScale  = kCalDefault.scale;
             g_voctOffset = kCalDefault.offset;
         }
+
+        // Per field, not all-or-nothing: a QSPI image saved before the nulls
+        // existed has a valid pitch fit followed by whatever bytes happened to
+        // be there, and those must not reach the control seam.
+        for (int i = 0; i < kNumKnobCv; ++i)
+            g_knobCvNull[i] = NullSane(cd.knobCvNull[i]) ? cd.knobCvNull[i] : 0.f;
+        for (int i = 0; i < kNumLevelCv; ++i)
+            g_levelCvNull[i] = NullSane(cd.levelCvNull[i]) ? cd.levelCvNull[i] : 0.f;
+        PrintCvNulls();
     }
 
     osc.Init(hw.AudioSampleRate());
@@ -392,11 +521,17 @@ int main(void)
 
     hw.StartAudio(audioCallback);
 
-    // Calibration runs AFTER StartAudio so captures happen under the same
-    // electrical conditions as playback (readings shift with load, see above).
+    // Captures run AFTER StartAudio so they happen under the same electrical
+    // conditions as playback (readings shift with load, see above).
     System::Delay(150); // let the callback's control processing settle
+
+#if FOXTAIL_CV_NULL
+    MeasureCvNulls();
+    SaveCal();
+#endif
+
     if (!switch1.Read() && !switch2.Read() && Slider(0) > 0.9f)
-        RunVoctCalibration();
+        RunCalibration();
 
     // Drive LEDs from the main loop (not the audio IRQ) to avoid FPU
     // lazy-stacking corruption of Led::Update()'s pwm accumulator. Everything
@@ -462,8 +597,10 @@ int main(void)
         {
             // One compact line per second (longer output overruns the USB TX
             // buffer and truncates lines).
-            //   cv[..] = the six direct CV inputs (spread time fb hpf lpf dry);
-            //            near 0.00 unpatched, or the module is on USB-only power.
+            //   cv[..] = the six direct CV inputs (spread time fb hpf lpf dry),
+            //            RAW: the stored nulls are not subtracted here, so a
+            //            calibrated module still shows the idle bias. Rails at
+            //            ~0.99 on USB-only power.
             //   voct   = raw TIME_CV / pitch CV in octaves. Tracking check:
             //            1 V -> 3 V patched must step the octaves by 2.000.
             //   cpu    = avg/max %. Retune kNumPartials against the WORST-CASE
