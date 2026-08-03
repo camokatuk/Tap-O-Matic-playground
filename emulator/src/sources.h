@@ -52,6 +52,33 @@ struct Envelope {
     }
 };
 
+// Slow shaped LFO, separate from Oscillator because it is a different job: that
+// one spans the audio range off two summed Hz sliders, this one spans 0.001..20
+// Hz off a single exponential slider and picks a waveform. Output is bipolar
+// -1..1, starting at -1 so a cycle begins at the bottom of the target's range.
+//
+// Triangle and Saw are the two that matter for Shepard: a triangle glides phi up
+// and back down with no discontinuity anywhere, a saw gives the endless version
+// and leans on the wrap being seamless.
+struct Lfo {
+    enum Shape { Triangle, Sine, Saw, Square };
+
+    float phase = 0.f;
+    float freq  = 0.14f; // Hz
+    int   shape = Triangle;
+
+    float process(float dt) {
+        phase += freq * dt;
+        phase -= std::floor(phase);
+        switch (shape) {
+            case Sine:   return -std::cos(phase * 6.283185307179586f);
+            case Saw:    return 2.f * phase - 1.f;
+            case Square: return phase < 0.5f ? -1.f : 1.f;
+            default:     return 1.f - 4.f * std::fabs(phase - 0.5f); // Triangle
+        }
+    }
+};
+
 // Sine LFO. freq in Hz. Advance once per audio block. Output is bipolar -1..1.
 struct Oscillator {
     float phase = 0.f;

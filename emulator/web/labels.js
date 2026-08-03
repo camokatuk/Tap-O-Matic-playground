@@ -11,6 +11,13 @@
 
   const labelOf = (t) => (SVG[t] !== undefined ? SVG[t] : t);
 
+  // A pot with its own SVG label uses it verbatim; the rest are named after the
+  // group bracket plus their column, e.g. "FADE TILT (LP-BP-HP) BAND 3".
+  function potLabel(id, col) {
+    const own = CTRL.pots.labels && CTRL.pots.labels[id];
+    return own ? labelOf(own) : `${labelOf(CTRL.pots.groupLabel)} ${col}`;
+  }
+
   async function fetchSvgLabels() {
     SVG = await (await fetch("/svg-labels")).json();
   }
@@ -27,8 +34,7 @@
     Object.entries(CTRL.sliders).forEach(([id, t]) => setData(id, labelOf(t)));
     Object.entries(CTRL.knobs).forEach(([id, t]) => setData(id, labelOf(t)));
 
-    const pan = labelOf(CTRL.pots.groupLabel);
-    CTRL.pots.ids.forEach((id, i) => setData(id, `${pan} ${cols[i]}`));
+    CTRL.pots.ids.forEach((id, i) => setData(id, potLabel(id, cols[i])));
 
     Object.entries(CTRL.switches).forEach(([id, arr]) => {
       if (id.startsWith("_")) return;
@@ -118,9 +124,11 @@
                     span("lbl-na", "—"), labelInput(CTRL.cvInputs.gate)));
     grid.append(gk);
 
-    // Pots — one shared group label.
+    // Pots — the three with their own labels, then the shared group bracket.
     const gp = group("Pots");
-    gp.append(rowEl("lbl-row", span("lbl-key", "PAN group"), labelInput(CTRL.pots.groupLabel)));
+    Object.entries(CTRL.pots.labels || {}).forEach(([id, t]) =>
+      gp.append(rowEl("lbl-row", span("lbl-key", id), labelInput(t))));
+    gp.append(rowEl("lbl-row", span("lbl-key", "group"), labelInput(CTRL.pots.groupLabel)));
     grid.append(gp);
 
     // Switches — two state labels each.

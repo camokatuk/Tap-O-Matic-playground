@@ -38,6 +38,11 @@ constexpr float kSampleRate = 48000.f;
 // Map a normalized 0..1 knob to a time in seconds (1 ms .. 10 s, log law).
 static float normToSec(float v) { return 0.001f * std::pow(10000.f, v); }
 
+// Map a normalized 0..1 slider to an LFO rate (0.001 .. 20 Hz, log law). Four
+// decades on one slider only works exponentially; linear would spend nine
+// tenths of the travel above 2 Hz.
+static float normToLfoHz(float v) { return 0.001f * std::pow(20000.f, v); }
+
 constexpr float kPitchMaxOct = 4.f; // pitch-CV depth 1.0 -> +4 octaves
 
 // A modulation source feeding one CV target. Params are set by the HTTP thread
@@ -45,7 +50,7 @@ constexpr float kPitchMaxOct = 4.f; // pitch-CV depth 1.0 -> +4 octaves
 // thread. These stand in for external modules patched into the CV jacks — they
 // exist ONLY in the emulator.
 struct CvSource {
-    std::atomic<int>   type{0};        // 0 off, 1 osc, 2 env
+    std::atomic<int>   type{0};        // 0 off, 1 osc, 2 env, 3 lfo
     std::atomic<float> depth{0.f};     // 0..1
     std::atomic<float> atk{0.05f};     // env attack  (normalized 0..1)
     std::atomic<float> dec{0.40f};     // env decay   (normalized 0..1)
@@ -54,8 +59,12 @@ struct CvSource {
     std::atomic<int>   trig{0};        // set 1 to fire the envelope
     std::atomic<float> oscCoarse{0.f}; // osc coarse freq (0..20000 Hz)
     std::atomic<float> oscFine{1.f};   // osc fine freq   (0.02..20 Hz)
+    std::atomic<float> lfoFreq{0.5f};  // lfo rate    (normalized 0..1) ~0.14 Hz
+    std::atomic<int>   lfoShape{0};    // lfo waveform (ftemu::Lfo::Shape)
+    std::atomic<int>   lfoUni{1};      // lfo: 0..1 instead of -1..1 (UI default too)
     ftemu::Envelope    env;            // audio-thread only
     ftemu::Oscillator  osc;            // audio-thread only
+    ftemu::Lfo         lfo;            // audio-thread only
 
     // Advance one block; return the source signal scaled by depth.
     // (envelope is unipolar 0..1, oscillator bipolar -1..1.)
@@ -76,6 +85,15 @@ struct CvSource {
                     + oscFine.load(std::memory_order_relaxed);
             osc.freq = f < 0.f ? 0.f : (f > 20000.f ? 20000.f : f);
             sig = osc.process(dt);
+        } else if (t == 3) {
+            lfo.freq  = normToLfoHz(lfoFreq.load(std::memory_order_relaxed));
+            lfo.shape = lfoShape.load(std::memory_order_relaxed);
+            sig = lfo.process(dt);
+            // Unipolar, like a rack LFO with a 0..+8 V output. A bipolar source
+            // can only use a 0..1 target's full range from a perfectly centred
+            // knob, and the sum is clamped, so any error clips at both ends.
+            // Unipolar with the knob at rest sweeps exactly 0..1 at full depth.
+            if (lfoUni.load(std::memory_order_relaxed)) sig = sig * 0.5f + 0.5f;
         }
         return sig * depth.load(std::memory_order_relaxed);
     }
@@ -91,6 +109,9 @@ struct CvSource {
         if (leaf == "cv.env.trig")    { trig.store(1, std::memory_order_relaxed);        return true; }
         if (leaf == "cv.osc.coarse")  { oscCoarse.store(v, std::memory_order_relaxed);   return true; }
         if (leaf == "cv.osc.fine")    { oscFine.store(v, std::memory_order_relaxed);     return true; }
+        if (leaf == "cv.lfo.freq")    { lfoFreq.store(v, std::memory_order_relaxed);     return true; }
+        if (leaf == "cv.lfo.shape")   { lfoShape.store((int)v, std::memory_order_relaxed); return true; }
+        if (leaf == "cv.lfo.uni")     { lfoUni.store((int)v, std::memory_order_relaxed);  return true; }
         return false;
     }
 };

@@ -19,8 +19,13 @@
     "amp8": "tspan11284"
   },
   "pots": {
-    "_note": "One shared label (the 'PAN' bracket). Each pot's name is '<group> <column>', column taken from the slider label.",
+    "_note": "Pots 1-3 are global controls with their own SVG labels, listed in 'labels'. The rest share the group label bracket, and their name is '<group> <column>' with the column taken from the slider label.",
     "groupLabel": "tspan11331",
+    "labels": {
+      "pan0": "tspan-pot-1",
+      "pan1": "tspan-pot-2",
+      "pan2": "tspan-pot-3"
+    },
     "ids": [
       "pan0",
       "pan1",

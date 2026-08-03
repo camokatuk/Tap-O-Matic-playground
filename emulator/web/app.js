@@ -87,8 +87,17 @@ function restoreState() {
     if (id.endsWith(".cv.src")) {
       const target = id.slice(0, -7);
       const card = document.querySelector(`.incard[data-wired-target="${cssEsc(target)}"]`);
-      const name = { 0: "off", 1: "osc", 2: "env" }[Math.round(value)];
+      const name = { 0: "off", 1: "osc", 2: "env", 3: "lfo" }[Math.round(value)];
       const btn = card && card.querySelector(`.seg button[data-src="${name}"]`);
+      if (btn) btn.click();
+      continue;
+    }
+    // LFO waveform: an index into the picker, so click the nth button.
+    if (id.endsWith(".cv.lfo.shape")) {
+      const target = id.slice(0, -".cv.lfo.shape".length);
+      const card = document.querySelector(`.incard[data-wired-target="${cssEsc(target)}"]`);
+      const btns = card ? card.querySelectorAll(".seg.wave button[data-wave]") : [];
+      const btn = btns[Math.round(value)];
       if (btn) btn.click();
       continue;
     }

@@ -17,7 +17,13 @@
     atk:    { min: 0,    max: 1,     step: 0.001, def: 0.05 },
     dec:    { min: 0,    max: 1,     step: 0.001, def: 0.623  }, // default 310 ms
     curve:  { min: -1,   max: 1,     step: 0.01,  def: 0    },
+    // Normalized 0..1, mapped to 0.001..20 Hz by normToLfoHz() in main.cpp.
+    // Default 0.5 is ~0.14 Hz, about 7 s a cycle — the Shepard ballpark.
+    lfoFreq: { min: 0,   max: 1,     step: 0.001, def: 0.5  },
   };
+
+  // Waveform order must match ftemu::Lfo::Shape.
+  const LFO_WAVES = [["tri", "Tri"], ["sin", "Sin"], ["saw", "Saw"], ["sqr", "Sqr"]];
 
   // ---- value readouts -------------------------------------------------------
   function secText(v) {                       // matches normToSec() in main.cpp
@@ -26,6 +32,23 @@
   }
   const curveText = (v) => (v < -0.1 ? "log" : v > 0.1 ? "exp" : "lin");
   const freqText = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} kHz` : `${v.toFixed(2)} Hz`);
+  function lfoHzText(v) {                     // matches normToLfoHz() in main.cpp
+    const hz = 0.001 * Math.pow(20000, v);
+    if (hz >= 1) return `${hz.toFixed(2)} Hz`;
+    return `${hz.toFixed(3)} Hz · ${(1 / hz).toFixed(1)} s`;
+  }
+
+  // How a role's raw slider value reads to a human. Several roles are stored
+  // normalized (times, LFO rate), so the raw number means nothing on its own —
+  // this is the only place that knows the mapping, and both the inline readout
+  // and the status bar go through it.
+  function roleText(role, v) {
+    if (role === "atk" || role === "dec") return secText(v);
+    if (role === "curve") return curveText(v);
+    if (role === "coarse" || role === "fine") return freqText(v);
+    if (role === "lfoFreq") return lfoHzText(v);
+    return v.toFixed(2);
+  }
 
   // ---- card building --------------------------------------------------------
   function rangeCtl(role, text, valText) {
@@ -36,9 +59,12 @@
     inp.type = "range";
     inp.min = R.min; inp.max = R.max; inp.step = R.step; inp.value = R.def;
     inp.dataset.role = role;
-    inp.addEventListener("mouseenter", () =>
-        status(`${text}: ${inp.value}`)
-    );
+    const show = () => status(`${text}: ${roleText(role, parseFloat(inp.value))}`);
+    inp.addEventListener("mouseenter", show);
+    inp.addEventListener("input", show); // live while dragging
+    // Only clear when the pointer leaves without a button down: dragging past
+    // the edge of the track still counts as holding the control.
+    inp.addEventListener("mouseleave", (e) => { if (!e.buttons) clearStatus(); });
     const r = rowEl("ctl", lab, inp);
     if (valText !== undefined) r.append(span("val", valText));
     return r;
@@ -48,7 +74,8 @@
     lab.textContent = "Source";
     const seg = document.createElement("div");
     seg.className = "seg";
-    [["off", "Off", true], ["osc", "Osc", false], ["env", "Env", false]].forEach(
+    [["off", "Off", true], ["lfo", "Lfo", false], ["osc", "Osc", false],
+     ["env", "Env", false]].forEach(
       ([src, txt, on]) => {
         const b = document.createElement("button");
         b.textContent = txt;
@@ -68,6 +95,32 @@
     card.append(top);
     card.append(rangeCtl("depth", "Depth"));
     card.append(segCtl());
+
+    // Lfo: one exponential rate slider + a waveform picker.
+    const waveLab = document.createElement("label");
+    waveLab.textContent = "Wave";
+    const waveSeg = document.createElement("div");
+    waveSeg.className = "seg wave";
+    LFO_WAVES.forEach(([w, txt], i) => {
+      const b = document.createElement("button");
+      b.textContent = txt;
+      b.dataset.wave = w;
+      if (i === 0) b.classList.add("on");
+      waveSeg.append(b);
+    });
+    const lfo = rowEl("src src-lfo",
+      rangeCtl("lfoFreq", "Rate", lfoHzText(RANGES.lfoFreq.def)),
+      rowEl("ctl", waveLab, waveSeg));
+    lfo.hidden = true;
+    // Unipolar: the CV sum is clamped 0..1, so a bipolar source needs a
+    // perfectly centred knob and exactly half depth to avoid clipping the ends.
+    const uni = document.createElement("input");
+    uni.type = "checkbox";
+    uni.className = "uni-box";
+    uni.checked = true;
+    const uniLab = document.createElement("label");
+    uniLab.textContent = "Unipolar";
+    lfo.append(rowEl("ctl", uniLab, uni));
 
     // Osc: coarse + fine frequency (summed & clamped by the emulator).
     const osc = rowEl("src src-osc",
@@ -92,7 +145,7 @@
     trig.textContent = "Trigger";
     env.append(trig);
 
-    card.append(osc, env);
+    card.append(lfo, osc, env);
     if (wired && target) wireCard(card, target);
     return card;
   }
@@ -107,6 +160,7 @@
       curve: `${target}.cv.env.curve`,
       coarse: `${target}.cv.osc.coarse`,
       fine: `${target}.cv.osc.fine`,
+      lfoFreq: `${target}.cv.lfo.freq`,
     };
     card.querySelectorAll("input[type=range]").forEach((inp) => {
       const id = idFor[inp.dataset.role];
@@ -117,14 +171,30 @@
         const val = inp.parentElement.querySelector(".val");
         send(id, v);
         saveVal(id, v);
-        if (val) {
-          const role = inp.dataset.role;
-          if (role === "atk" || role === "dec") val.textContent = secText(v);
-          else if (role === "curve") val.textContent = curveText(v);
-          else if (role === "coarse" || role === "fine") val.textContent = freqText(v);
-        }
+        if (val) val.textContent = roleText(inp.dataset.role, v);
       });
     });
+
+    // Waveform picker. Indexed, so the stored value is ftemu::Lfo::Shape.
+    // No data-persist-id: restoreState clicks these by index instead, since a
+    // button has no .value for the generic path to restore into.
+    card.querySelectorAll(".wave button[data-wave]").forEach((b, i) => {
+      b.addEventListener("click", () => {
+        send(`${target}.cv.lfo.shape`, i);
+        saveVal(`${target}.cv.lfo.shape`, i);
+      });
+    });
+
+    // Unipolar checkbox. Defaults on, and the emulator's default matches.
+    const uni = card.querySelector(".uni-box");
+    if (uni) {
+      uni.dataset.persistId = `${target}.cv.lfo.uni`;
+      uni.addEventListener("change", () => {
+        const v = uni.checked ? 1 : 0;
+        send(`${target}.cv.lfo.uni`, v);
+        saveVal(`${target}.cv.lfo.uni`, v);
+      });
+    }
 
     // Cycle checkbox + Trigger/Stop button.
     const cyc = card.querySelector(".cycle-box");
@@ -218,10 +288,19 @@
         s.hidden = !s.classList.contains("src-" + btn.dataset.src);
       });
       if (card.dataset.wiredTarget) {
-        const v = { off: 0, osc: 1, env: 2 }[btn.dataset.src];
+        const v = { off: 0, lfo: 3, osc: 1, env: 2 }[btn.dataset.src];
         send(`${card.dataset.wiredTarget}.cv.src`, v);
         saveVal(`${card.dataset.wiredTarget}.cv.src`, v);
       }
+    });
+
+    // Waveform picker highlight (the sending is wired per-card).
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest(".seg.wave button[data-wave]");
+      if (!btn) return;
+      btn.parentElement.querySelectorAll("button").forEach((b) =>
+        b.classList.toggle("on", b === btn)
+      );
     });
   }
 
