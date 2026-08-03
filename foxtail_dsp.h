@@ -104,10 +104,18 @@ struct Controls
     // partials in it IS louder, and it keeps the envelope drawable at any level.
     float bandGain[kNumBands] = {0.f};
 
-    // Pots 4-9: where band b fills FROM. 0 = its lowest partial and upward
-    // (lowpass), 0.5 = its middle outward (bandpass), 1 = its highest downward
-    // (highpass). Bands 0-1 hold two partials each and stay at 0.
+    // Pots 4-9: where band b fills FROM. 0 = its HIGHEST partial and downward
+    // (highpass), 0.5 = its middle outward (bandpass), 1 = its lowest partial
+    // and upward (lowpass). Highpass at 0 so that building a hump is a single
+    // diagonal gesture: a band left of the peak wants to keep the partials
+    // nearest the peak, which are its high ones, so pots rise left to right
+    // exactly as the sliders do. Bands 0-1 hold two partials each and stay at 0.
     float bandShape[kNumBands] = {0.f};
+
+    // Spectral tilt, 0 = 1/ratio (a sawtooth's -6 dB/octave, acoustic-ish),
+    // 1 = 1/sqrt(ratio) (equal power per octave, bright). Continuous, so the
+    // middle is a real slope between the two. Driven by GATE on the panel.
+    float tilt = 0.f;
 
     // Pot 2: stereo spread width, 0 (mono) to full. The number of pan positions
     // is fixed at kSlots — the count was a pot once and only changed the grain
@@ -278,6 +286,7 @@ class FoxTailOsc
         for (int i = 0; i < 2 * kSlots; ++i)
             panDelta_[i] = 0.f; // centred until the first block
         bandShift_ = 1.f;
+        tiltSmooth_ = 0.f;
         for (int b = 0; b < kNumBands; ++b)
         {
             bandGainSmooth_[b] = 0.f;
@@ -289,8 +298,9 @@ class FoxTailOsc
             // the comb steps one harmonic at a time everywhere; the bands are
             // geometric, so that is 2 partials at the bottom and 32 near the top.
             bandSpanLo_[b] = std::exp2(((float)b + 0.5f) / bandScale_);
-            bandSpanW_[b]  = std::exp2(((float)b + 1.5f) / bandScale_) - bandSpanLo_[b];
-            bandSeed_[b]   = bandSpanLo_[b];
+            bandSpanHi_[b] = std::exp2(((float)b + 1.5f) / bandScale_);
+            bandSpanW_[b]  = bandSpanHi_[b] - bandSpanLo_[b];
+            bandSeed_[b]   = bandSpanHi_[b];
             bandGate_[b]   = 1.f;
         }
         // Random initial phases, always. Aligned phases make every partial peak
@@ -421,6 +431,12 @@ class FoxTailOsc
     // Ratio at which Shepard's top end reaches silence: one index above the last
     // partial, which is where the highest partial lands at full phi.
     static constexpr float kEndFade = (float)kNumPartials + 1.f;
+
+    // Tilt level compensation, fitted at kNumPartials = 96. Refit if that moves:
+    // g(m) = sqrt(P(0)/P(m)), P(m) = sum over the bank of the tilted amplitude
+    // squared. tools/ has no generator for this; it is ten lines of Python.
+    static constexpr float kTiltNorm1 = -0.5604f;
+    static constexpr float kTiltNorm2 = 0.1240f;
 
     // Partials fade out over the top 5% of the band rather than switching off:
     // a partial blinking off as it crosses Nyquist is a click.
@@ -554,6 +570,17 @@ class FoxTailOsc
         // block rate is an AM sideband at the callback rate (whinebug.md).
         const float norm = (shepard || !FOXTAIL_CLUSTER_NORM) ? 1.f : FastRSqrt(boost);
 
+        tiltSmooth_ += (Clamp01(c.tilt) - tiltSmooth_) * smoothCoefBlk_;
+        // Level compensation for the tilt morph, riding into the band gains
+        // beside `norm` for the same reason: both are per-block values the
+        // partial loop already multiplies in. Summed over the bank, equal power
+        // per octave is ~5 dB louder than a sawtooth slope, so GATE would step
+        // the level instead of only the colour. Quadratic fit to
+        // sqrt(P(0)/P(m)), worst error 0.06 dB. Like the Cluster compensation it
+        // assumes a flat envelope: with only a few low bands up the two slopes
+        // are much closer together and this over-corrects a little.
+        const float tiltNorm = 1.f + tiltSmooth_ * (kTiltNorm1 + tiltSmooth_ * kTiltNorm2);
+
         // One smoothed gain per band, not an L/R pair: pan left the bands when
         // the spread became global, which is what pays for the slot lookup.
         //
@@ -565,7 +592,7 @@ class FoxTailOsc
         // back with the audio bit-identical (archives.md) — keep it out of there.
         for (int b = 0; b < kNumBands; ++b)
         {
-            const float tg = Clamp01(c.bandGain[b]) * norm;
+            const float tg = Clamp01(c.bandGain[b]) * norm * tiltNorm;
             bandGainSmooth_[b] += (tg - bandGainSmooth_[b]) * smoothCoefBlk_;
             // Flush the one-pole tails to zero. Left alone they decay into
             // denormals, and denormal arithmetic on the M7 is slow enough to
@@ -579,10 +606,10 @@ class FoxTailOsc
             // one clamp. seed = where the band fills from; gate = how far the
             // fill has reached, in partials, +1 so a partial at the frontier
             // fades over its last step instead of switching off.
-            const float sc  = Clamp01(c.bandShape[b]);
+            const float sc  = Clamp01(c.bandShape[b]); // measured from the TOP
             const float far = (sc > 0.5f ? sc : 1.f - sc) * bandSpanW_[b];
             const float fil = Clamp01(Clamp01(c.bandGain[b]) * 2.f - 1.f);
-            bandSeed_[b] += (bandSpanLo_[b] + sc * bandSpanW_[b] - bandSeed_[b])
+            bandSeed_[b] += (bandSpanHi_[b] - sc * bandSpanW_[b] - bandSeed_[b])
                             * smoothCoefBlk_;
             bandGate_[b] += (fil * far + 1.f - bandGate_[b]) * smoothCoefBlk_;
         }
@@ -610,6 +637,7 @@ class FoxTailOsc
         // One multiply on sel in the partial loop covers both, because sel is
         // the only thing either of them is indexed by.
         bandShift_ = std::exp2((0.5f - bShift) * (2.f * kBandShiftOct));
+
 
         // Inharmonicity coefficient. Exponential so the musically useful low end
         // (piano-ish stretch) gets most of the slider travel.
@@ -730,12 +758,20 @@ class FoxTailOsc
             const float gl = gc + gs * panDelta_[2 * sl];
             const float gr = gc + gs * panDelta_[2 * sl + 1];
 
-            // 1/sqrt(ratio) is a -3 dB/octave tilt, which makes every octave band
-            // carry equal power (band b holds 2^b partials at amplitude 2^-b/2).
-            // So one multiply does the job of both the spectral tilt and the
-            // per-band 1/sqrt(M) normalisation, and all sliders up = a pink-ish
-            // spectrum rather than something top-heavy.
-            const float tilt = FastRSqrt(ratio);
+            // Spectral tilt, morphing between the two slopes worth having.
+            // rt*rt = 1/ratio, a sawtooth's -6 dB/octave: harmonics are evenly
+            // spaced in frequency, so the octave above r holds r partials and
+            // each successive one carries 1/r of the power — falling, the way an
+            // acoustic source does. rt = 1/sqrt(ratio) gives every octave EQUAL
+            // power instead, which makes every band slider equally effective but
+            // sounds 3 dB/octave brighter than a sawtooth, ~20 dB over the bank.
+            //
+            // A lerp, not a branch: `shepard` already splits this loop in two and
+            // a second bool would make it four. Three instructions, no clone, and
+            // the in-between positions are usable slopes rather than a crossfade
+            // between two spectra.
+            const float rt   = FastRSqrt(ratio);
+            const float tilt = rt * (rt + tiltSmooth_ * (1.f - rt));
 
             // Anti-alias fade, branch-free.
             const float fade = Clamp01((nyquist_ - freq) * nyqFade);
@@ -779,7 +815,9 @@ class FoxTailOsc
     float bandSeed_[kNumBands];     // partial the band fills out from
     float bandGate_[kNumBands];     // how far the fill has reached, in partials
     float bandSpanLo_[kNumBands];
+    float bandSpanHi_[kNumBands];
     float bandSpanW_[kNumBands];
+    float tiltSmooth_;              // GATE is a step; this is what keeps it quiet
     float panDelta_[2 * kSlots];    // offsets from centre, per slot, L/R interleaved
     float bandShift_;               // multiplier on sel: slides envelope + comb
     float meter_[kNumBands];

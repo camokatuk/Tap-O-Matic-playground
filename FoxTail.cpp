@@ -431,6 +431,12 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     controls.inharm = clampf(Slider(0) + LevelCv(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
+    // GATE: high swings the spectral tilt bright. A gate is an event, so this
+    // reads as "brighter on the accent" with a trigger patched, and as a plain
+    // A/B with a switch or offset. Unpatched reads low = the darker slope.
+    // Smoothed in the engine; the jack is the only free input on the panel.
+    controls.tilt = hw.gate_in_1.State() ? 1.0f : 0.0f;
+
     // Pot 1 -> spectral shift, under slider 1's inharmonicity: both bend the
     // whole spectrum. Pot 2 -> fine tune, under the fundamental's own band.
     // Pot 3 -> stereo spread.

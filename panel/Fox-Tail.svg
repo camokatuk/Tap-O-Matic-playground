@@ -1214,7 +1214,7 @@
          sodipodi:role="line"
          id="tspan-pot-3"
          x="325.0"
-         y="624.60083">PAN</tspan></text>
+         y="624.60083">STEREO</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1224,7 +1224,7 @@
          sodipodi:role="line"
          id="tspan11331"
          x="500.90289"
-         y="624.60083">FADE TILT (LP-BP-HP)</tspan></text>
+         y="624.60083">FADE TILT (HP-BP-LP)</tspan></text>
     <path
        style="fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="M 430.60915,619.76411 h -55.6626 l 0.0944,-6.05312"

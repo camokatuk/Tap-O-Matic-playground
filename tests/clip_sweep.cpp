@@ -119,9 +119,10 @@ void SetSliders(foxtail::Controls& c, int cfg)
         case 0: // all up, no spread — the loudest patch the panel can reach
             for (int b = 0; b < foxtail::kNumBands; ++b) c.bandGain[b] = 1.f;
             break;
-        case 1: // all up, spread wide
+        case 1: // all up, spread wide, bright tilt
             for (int b = 0; b < foxtail::kNumBands; ++b) c.bandGain[b] = 1.f;
             c.spread = 1.f;
+            c.tilt   = 1.f;
             break;
         case 2: c.bandGain[0] = 1.f; break;                    // fundamental band only
         case 3: c.bandGain[foxtail::kNumBands - 1] = 1.f; break; // top band only
@@ -187,7 +188,11 @@ int main()
         for (int b = 0; b < foxtail::kNumBands; ++b)
         {
             p.c.bandGain[b] = uni(rng);
+            p.c.bandShape[b] = uni(rng);
         }
+        p.c.tilt      = uni(rng);
+        p.c.bandShift = uni(rng);
+        p.c.spread    = uni(rng);
         p.c.inharm   = uni(rng);
         p.c.mode     = uni(rng) < 0.5f ? 0 : 1;
         p.c.pitchHz  = 30.f * std::exp2(uni(rng) * 6.f); // 30 Hz .. ~2 kHz

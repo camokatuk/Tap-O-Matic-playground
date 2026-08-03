@@ -233,10 +233,23 @@
         wired: true,
       }));
     });
-    const gate = rowEl("incard is-empty",
+    // GATE is digital-only: a plain high/low, no source card. High swings the
+    // spectral tilt from a sawtooth's -6 dB/oct to equal-power-per-octave.
+    const gate = rowEl("incard",
       rowEl("incard-top", span("incard-title", M.labelOf(M.ctrl.cvInputs.gate)),
-            span("incard-target", "→ sync/trig")),
-      span("src-empty", "digital gate — TBD"));
+            span("incard-target", "→ bright tilt")));
+    const gBox = document.createElement("input");
+    gBox.type = "checkbox";
+    gBox.dataset.persistId = "gate";
+    const gLab = document.createElement("label");
+    gLab.textContent = "Gate high";
+    gBox.addEventListener("change", () => {
+      const v = gBox.checked ? 1 : 0;
+      send("gate", v);
+      saveVal("gate", v);
+      status(`GATE: ${v ? "high — bright" : "low — sawtooth tilt"}`);
+    });
+    gate.append(rowEl("ctl", gLab, gBox));
     box.append(gate);
   }
 
