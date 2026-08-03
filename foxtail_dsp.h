@@ -19,8 +19,9 @@
 //     retunes only by rebuilding the table and is bursty, which the noise budget
 //     (docs/claude/whinebug.md) forbids.
 //   * Band sliders are breakpoints of a piecewise-linear spectral envelope in
-//     log-frequency over geometric bands spanning the whole bank; the pots pan
-//     each band. Slider 1 is inharmonicity; pot 1 is fine tune.
+//     log-frequency over geometric bands spanning the whole bank. Slider 1 is
+//     inharmonicity; pot 1 is fine tune, pots 2-3 are one stereo spread for the
+//     whole bank. Pots 4-9 are unassigned (per-band shape, in design).
 //   * One shaper, two modes: Cluster and Shepard. Both retune partials inside a
 //     movable window, once per block.
 //   * Constant work per callback: every partial is always rendered, silent ones
@@ -63,6 +64,25 @@ static constexpr int kNumBands = 8;
 // uint->float convert and three FP ops per partial per sample. Phase truncation
 // to 14 bits puts the worst spur near -84 dBc per partial, which is far below
 // this board's own noise floor.
+// Pan-slot assignment: row n-1 sends partial k (mod 8) to one of n positions
+// across the stereo field. Searched, not derived — the obvious closed forms
+// collapse for some n (3k mod n loses every position but one whenever 3 divides
+// n). Each row holds three invariants, asserted in tests/slot_table.cpp: use all
+// n positions; keep the even-k and odd-k subsets balanced around centre, so
+// switch 2 in ODD ONLY cannot shove the image to one side; and put neighbouring
+// partials as far apart as the first two allow. Internal linkage because C++14
+// has no inline variables and this is a header.
+static constexpr unsigned char kSlotPat[8][8] = {
+    {0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 1, 1, 0, 1},
+    {0, 1, 2, 0, 2, 1, 0, 2},
+    {0, 1, 3, 0, 3, 2, 0, 3},
+    {0, 2, 3, 0, 4, 2, 1, 4},
+    {0, 2, 4, 0, 5, 3, 1, 5},
+    {0, 3, 4, 1, 5, 2, 3, 6},
+    {0, 3, 5, 1, 7, 4, 2, 6},
+};
+
 static constexpr int kSineBits = 14;
 static constexpr int kSineSize = 1 << kSineBits;
 static constexpr float kTwoPi  = 6.283185307179586f;
@@ -77,10 +97,28 @@ enum ShaperMode
 // (firmware or emulator).
 struct Controls
 {
-    // Slider b = gain of band b; pot b = its pan (0 = left, 1 = right).
+    // Slider b: gain of band b over its whole travel, AND above half its fill —
+    // how far the band's partials spread out from the seed. So the bottom half
+    // is one partial per band at varying level (the skeleton comb) and the top
+    // half fills each band in. Coupling the two is deliberate: a band with more
+    // partials in it IS louder, and it keeps the envelope drawable at any level.
     float bandGain[kNumBands] = {0.f};
-    float bandPan[kNumBands]  = {0.5f, 0.5f, 0.5f, 0.5f,
-                                 0.5f, 0.5f, 0.5f, 0.5f};
+
+    // Pots 4-9: where band b fills FROM. 0 = its lowest partial and upward
+    // (lowpass), 0.5 = its middle outward (bandpass), 1 = its highest downward
+    // (highpass). Bands 0-1 hold two partials each and stay at 0.
+    float bandShape[kNumBands] = {0.f};
+
+    // Pot 2: stereo spread width, 0 (mono) to full. The number of pan positions
+    // is fixed at kSlots — the count was a pot once and only changed the grain
+    // of a cloud the ear already hears as one texture.
+    float spread = 0.f;
+
+    // Pot 3: slides the whole spectral shape — band envelope AND comb — along
+    // the harmonic series, without moving any partial's frequency. Centre is
+    // neutral, an octave each way, CW = shape moves up. With the sliders near
+    // half (the skeleton comb) this scans which harmonics are chosen.
+    float bandShift = 0.5f;
 
     // Slider 1: inharmonicity. 0 = pure harmonic series; up bends the series
     // stiff-string style (piano at low settings, bell/metallic high). The k^2
@@ -237,13 +275,23 @@ class FoxTailOsc
         winStart_     = 1.f;
         winEnd_        = 1.f;
 
+        for (int i = 0; i < 2 * kSlots; ++i)
+            panDelta_[i] = 0.f; // centred until the first block
+        bandShift_ = 1.f;
         for (int b = 0; b < kNumBands; ++b)
         {
-            bandLSmooth_[b] = 0.f;
-            bandRSmooth_[b] = 0.f;
+            bandGainSmooth_[b] = 0.f;
+            bandGainStep_[b]   = 0.f;
             meter_[b]   = 0.f;
             audible_[b] = true;
             bandLoRatio_[b] = std::exp2(((float)b - 0.5f) / bandScale_);
+            // Band b spans these partials. In PARTIALS, not log-frequency, so
+            // the comb steps one harmonic at a time everywhere; the bands are
+            // geometric, so that is 2 partials at the bottom and 32 near the top.
+            bandSpanLo_[b] = std::exp2(((float)b + 0.5f) / bandScale_);
+            bandSpanW_[b]  = std::exp2(((float)b + 1.5f) / bandScale_) - bandSpanLo_[b];
+            bandSeed_[b]   = bandSpanLo_[b];
+            bandGate_[b]   = 1.f;
         }
         // Random initial phases, always. Aligned phases make every partial peak
         // together (an impulse train): measured crest factor 6.8 and clipping at
@@ -340,6 +388,40 @@ class FoxTailOsc
     // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
     static constexpr float kDensityMax = 0.995f;
 
+    // Stereo spread is quantised to kSlots pan positions across the field, built
+    // once per block. The ear cannot place a single partial finely enough to
+    // tell this from a continuous pan law, and the quantisation is what makes
+    // the feature affordable: the equal-power sqrt pair moves out of the
+    // per-partial loop (cost check: tools/loop_cost.py).
+    //
+    // Row n-1 assigns partial k (mod 8) to one of n pan positions. Searched, not
+    // derived: the obvious closed forms collapse for some n (3k mod n loses
+    // every position but one whenever 3 divides n). Each row satisfies three
+    // invariants, asserted in tests/slot_table.cpp — use all n positions, keep
+    // the even-k and odd-k subsets balanced around centre so switch 2 in ODD
+    // ONLY cannot shove the image to one side, and put neighbouring partials as
+    // far apart as that allows.
+    // (The table itself is at namespace scope: C++14 has no inline variables, so
+    // a constexpr member indexed at runtime would need an out-of-class
+    // definition that a header cannot give.)
+    static constexpr int   kSlots  = 8;
+    static constexpr float kCentre = 0.70710678f;
+
+    // Shepard-only band crossfade: linear over the top kXfadeW of a band, ending
+    // exactly at the boundary so the gain is continuous across it. Narrow on
+    // purpose — wide enough that a partial takes many blocks to cross at any
+    // sane phi rate, narrow enough that a band still owns its own partials.
+    static constexpr float kXfadeW   = 0.15f;
+    static constexpr float kXfadeLo  = 1.f - kXfadeW;
+    static constexpr float kXfadeInv = 1.f / kXfadeW;
+
+    // The spectral shift pot's range, in octaves either side of neutral.
+    static constexpr float kBandShiftOct = 1.f;
+
+    // Ratio at which Shepard's top end reaches silence: one index above the last
+    // partial, which is where the highest partial lands at full phi.
+    static constexpr float kEndFade = (float)kNumPartials + 1.f;
+
     // Partials fade out over the top 5% of the band rather than switching off:
     // a partial blinking off as it crosses Nyquist is a click.
     static constexpr float kNyqFadeFrac = 0.05f;
@@ -356,12 +438,6 @@ class FoxTailOsc
     // and the top of the bank lands several times above its harmonic position.
     // (Smaller values only move the top partials, which is barely audible.)
     static constexpr float kInharmMax   = 2.0e-3f;
-
-    // Band crossfade: flat outside the middle kXfadeW of the gap between two
-    // slider centres, smoothstep across it.
-    static constexpr float kXfadeW   = 0.35f;
-    static constexpr float kXfadeLo  = 0.5f - kXfadeW * 0.5f;
-    static constexpr float kXfadeInv = 1.f / kXfadeW;
 
     static constexpr uint32_t kPhaseSeed = 0x9E3779B9u;
 
@@ -403,6 +479,8 @@ class FoxTailOsc
         const float shapeA   = Smooth(sh_.shapeA, Clamp01(c.shapeA), k);
         const float shapeB   = Smooth(sh_.shapeB, Clamp01(c.shapeB), k);
         const float inh      = Smooth(sh_.inharm, Clamp01(c.inharm), k);
+        const float spread   = Smooth(sh_.spread, Clamp01(c.spread), k);
+        const float bShift   = Smooth(sh_.bandShift, Clamp01(c.bandShift), k);
 
         // Clamp the effective fundamental to a playable range. Without this, a
         // railed CV input (a gate or +5V source patched into V/OCT reads as +5
@@ -425,9 +503,16 @@ class FoxTailOsc
         winStart_ = winStart; // published for the emulator's partial viewer
         winEnd_   = winEnd;
 
+        // Smoothed here rather than after the band loop because phi needs it.
+        paritySmooth_ += (Clamp01(c.parity) - paritySmooth_) * smoothCoefBlk_;
+
         // Mode params.
         const bool  shepard   = (c.mode == kModeShepard);
-        const float phi       = shapeA;
+        // Phi's range doubles under ODD ONLY. The wrap is seamless only when the
+        // shift lands the surviving set back on itself: at phi=1 the odd set
+        // {1,3..95} sits on {2,4..96}, the EVEN positions, so it jumps. At phi=2
+        // it sits on {3,5..97} — itself, relabelled. Per block, so it is free.
+        const float phi       = shapeA * (1.f + paritySmooth_);
         // Shepard's knob 5 ducks the windowed partials, INVERTED so the knob at
         // rest (fully CCW) means unity gain. As a plain gain, the knob sitting
         // at zero silenced everything inside the window — with knob 3 wide that
@@ -469,10 +554,8 @@ class FoxTailOsc
         // block rate is an AM sideband at the callback rate (whinebug.md).
         const float norm = (shepard || !FOXTAIL_CLUSTER_NORM) ? 1.f : FastRSqrt(boost);
 
-        // Fold gain and pan into per-band L/R gains, then smooth those. Equal
-        // power: L^2 + R^2 = 1. Interpolating already-equal-power endpoints per
-        // partial is not exactly equal power, but the error is inaudible and it
-        // saves two transcendentals per partial.
+        // One smoothed gain per band, not an L/R pair: pan left the bands when
+        // the spread became global, which is what pays for the slot lookup.
         //
         // The Cluster compensation rides in here, not in the partial loop:
         // these are already per-block values that the loop multiplies in, so
@@ -482,22 +565,51 @@ class FoxTailOsc
         // back with the audio bit-identical (archives.md) — keep it out of there.
         for (int b = 0; b < kNumBands; ++b)
         {
-            const float g  = Clamp01(c.bandGain[b]);
-            const float pn = Clamp01(c.bandPan[b]);
-            const float tl = g * std::sqrt(1.f - pn) * norm;
-            const float tr = g * std::sqrt(pn) * norm;
-            bandLSmooth_[b] += (tl - bandLSmooth_[b]) * smoothCoefBlk_;
-            bandRSmooth_[b] += (tr - bandRSmooth_[b]) * smoothCoefBlk_;
+            const float tg = Clamp01(c.bandGain[b]) * norm;
+            bandGainSmooth_[b] += (tg - bandGainSmooth_[b]) * smoothCoefBlk_;
             // Flush the one-pole tails to zero. Left alone they decay into
             // denormals, and denormal arithmetic on the M7 is slow enough to
             // show up as a transient CPU spike once the whole bank is doing it.
-            if (bandLSmooth_[b] < 1e-20f && bandLSmooth_[b] > -1e-20f) bandLSmooth_[b] = 0.f;
-            if (bandRSmooth_[b] < 1e-20f && bandRSmooth_[b] > -1e-20f) bandRSmooth_[b] = 0.f;
+            if (bandGainSmooth_[b] < 1e-20f && bandGainSmooth_[b] > -1e-20f)
+                bandGainSmooth_[b] = 0.f;
             meter_[b]   = Clamp01(c.bandGain[b]);
             audible_[b] = bandLoRatio_[b] * f0 < nyquist_;
+
+            // Comb geometry, folded so the partial loop needs one subtract and
+            // one clamp. seed = where the band fills from; gate = how far the
+            // fill has reached, in partials, +1 so a partial at the frontier
+            // fades over its last step instead of switching off.
+            const float sc  = Clamp01(c.bandShape[b]);
+            const float far = (sc > 0.5f ? sc : 1.f - sc) * bandSpanW_[b];
+            const float fil = Clamp01(Clamp01(c.bandGain[b]) * 2.f - 1.f);
+            bandSeed_[b] += (bandSpanLo_[b] + sc * bandSpanW_[b] - bandSeed_[b])
+                            * smoothCoefBlk_;
+            bandGate_[b] += (fil * far + 1.f - bandGate_[b]) * smoothCoefBlk_;
+        }
+        // Step up to the next band's gain, for the Shepard crossfade. A second
+        // pass because band b needs band b+1 already smoothed.
+        for (int b = 0; b < kNumBands; ++b)
+        {
+            const int b1 = b + 1 > kNumBands - 1 ? kNumBands - 1 : b + 1;
+            bandGainStep_[b] = bandGainSmooth_[b1] - bandGainSmooth_[b];
         }
 
-        paritySmooth_ += (Clamp01(c.parity) - paritySmooth_) * smoothCoefBlk_;
+        // Slot pan table, stored as offsets FROM centre so the partial loop can
+        // lerp centre -> slot with two FMAs. sqrt is affordable here: 8 turns
+        // per block, not 96. Lerping between two equal-power points is not
+        // itself equal power, but the dip is a fraction of a dB.
+        for (int i = 0; i < kSlots; ++i)
+        {
+            const float pos = (float)i * (2.f / (float)(kSlots - 1)) - 1.f;
+            const float p   = Clamp01(0.5f + 0.5f * spread * pos);
+            panDelta_[2 * i]     = std::sqrt(1.f - p) - kCentre;
+            panDelta_[2 * i + 1] = std::sqrt(p) - kCentre;
+        }
+
+        // Slides the envelope and the comb together along the harmonic series.
+        // One multiply on sel in the partial loop covers both, because sel is
+        // the only thing either of them is indexed by.
+        bandShift_ = std::exp2((0.5f - bShift) * (2.f * kBandShiftOct));
 
         // Inharmonicity coefficient. Exponential so the musically useful low end
         // (piano-ish stretch) gets most of the slider travel.
@@ -547,7 +659,17 @@ class FoxTailOsc
             // body). std::sqrt is safe ONLY because the build sets
             // -fno-math-errno: that makes it a bare VSQRT, exact at B = 0.
             ratio *= std::sqrt(1.f + inharmB * ratio * ratio);
-            const float wGain = shepard ? (1.f + w * (winGain - 1.f)) : 1.f;
+            // Shepard's ends. The bank is finite, so a shift by one index leaves
+            // nothing at the bottom and adds one at the top: the fundamental
+            // simply vanishes as phi rises. Fading the extreme ends to silence
+            // makes the wrap exact instead of nearly exact — at phi=0 the set is
+            // {2..96} plus a silent 1, at full phi it is {2..96} plus a silent
+            // 97, which are the same sound. One partial wide, so only the
+            // outermost two are ever touched, and each fades across a whole phi
+            // sweep. Scaled by w so partials outside the window, which never
+            // moved, are not faded for standing still.
+            const float ends  = Clamp01(std::fminf(ratio - 1.f, kEndFade - ratio));
+            const float wGain = shepard ? 1.f + w * (winGain * ends - 1.f) : 1.f;
 
             const float freq = ratio * f0;
 
@@ -558,31 +680,55 @@ class FoxTailOsc
             const float incHz = std::fminf(freq, nyquist_);
             inc_[k]           = (uint32_t)(incHz * hzToInc);
 
-            // The spectral envelope is sampled at the SHIFTED frequency, not at
-            // the partial index. That is what makes Shepard seamless: at phi = 1
+            // Shepard samples the envelope at the SHIFTED frequency: at phi = 1
             // partial k sits where partial k+1 was, so if amplitude depends only
             // on frequency the ensemble before and after the wrap is identical
-            // and nothing clicks. It also means you draw the Shepard envelope
-            // with the sliders.
-            // Each slider sits at the CENTRE of its band (hence the -0.5), and
-            // the crossfade between neighbours has a flat plateau in the middle.
-            // With plain edge-to-edge linear interpolation, raising one slider
-            // built a triangle that spilled a lot of energy into both
-            // neighbouring bands — real energy, so the meters were honest, but it
-            // made a single slider look and sound like three.
-            const float bp = FastLog2(ratio) * bandScale_ - 0.5f;
+            // and nothing clicks. Cluster samples it at the partial INDEX
+            // instead, so a slider always owns the same harmonics no matter
+            // where the collapse dragged them — otherwise sweeping density
+            // empties the top of the spectrum and the upper sliders go dead
+            // under your fingers. Sliders pick the ingredients in Cluster and
+            // EQ the output in Shepard; the branch is unswitched, so it is free.
+            const float sel = (shepard ? ratio : idx) * bandShift_;
+
+            // Slider b owns the partials from its own position up to slider b+1
+            // (hence the -0.5). Cluster gets no crossfade into the neighbour:
+            // the comb picks partials strictly per band, so blending the gain
+            // across the boundary meant a band's survivors drew their level from
+            // the slider next door — set a band to highpass and it kept sounding
+            // with its own slider down.
+            //
+            // Shepard needs one anyway: partials slide through the envelope, and
+            // a step at a boundary is an audible tick as each one crosses. It is
+            // kXfadeW of a band wide instead of the old 35%, linear instead of
+            // smoothstepped, and folded to one load plus one FMA. Free in the
+            // budget that matters — `shepard` is loop-invariant, so GCC
+            // unswitches it and the Cluster clone carries none of this.
+            const float bp = FastLog2(sel) * bandScale_ - 0.5f;
             int         b  = (int)bp;
             if (bp < 0.f) b = 0;
             if (b > kNumBands - 1) b = kNumBands - 1;
-            int b1 = b + 1;
-            if (b1 > kNumBands - 1) b1 = kNumBands - 1;
 
-            float t = Clamp01(bp - (float)b);
-            t = Clamp01((t - kXfadeLo) * kXfadeInv);
-            t = t * t * (3.f - 2.f * t); // smoothstep shoulders, flat between
+            const float gb = bandGainSmooth_[b];
+            const float g  = shepard
+                                 ? gb + bandGainStep_[b]
+                                            * Clamp01((bp - (float)b - kXfadeLo) * kXfadeInv)
+                                 : gb;
 
-            const float gl = bandLSmooth_[b] + (bandLSmooth_[b1] - bandLSmooth_[b]) * t;
-            const float gr = bandRSmooth_[b] + (bandRSmooth_[b1] - bandRSmooth_[b]) * t;
+            // Comb: the band fills outward from its seed, one partial at a time.
+            // Distance is in partials, so a pot means the same thing in a band
+            // holding 2 of them and one holding 32.
+            const float fg = Clamp01(bandGate_[b] - std::fabs(sel - bandSeed_[b]));
+
+            // Pan by partial number, not by band. The fundamental stays centred
+            // and everything above it sits at its slot — an image anchored at
+            // the bottom, which a fully spread fundamental smears.
+            const int   sl = kSlotPat[kSlots - 1][k & (kSlots - 1)];
+            const float sr = Clamp01(ratio - 1.f);
+            const float gc = g * kCentre;
+            const float gs = g * sr;
+            const float gl = gc + gs * panDelta_[2 * sl];
+            const float gr = gc + gs * panDelta_[2 * sl + 1];
 
             // 1/sqrt(ratio) is a -3 dB/octave tilt, which makes every octave band
             // carry equal power (band b holds 2^b partials at amplitude 2^-b/2).
@@ -598,7 +744,7 @@ class FoxTailOsc
             // k+1, so k odd == an even partial.
             const float par = (k & 1) ? (1.f - paritySmooth_) : 1.f;
 
-            const float a = tilt * fade * wGain * par * kHeadroom;
+            const float a = tilt * fade * wGain * par * fg * kHeadroom;
             // No denormal guard here: the band-gain smoothers are flushed, so a
             // denormal cannot originate upstream, and two compares per partial
             // per block is not free.
@@ -620,7 +766,7 @@ class FoxTailOsc
     // (folded, per band) because they reach amplitude instead.
     struct Shaper
     {
-        float position, window, shapeA, shapeB, inharm;
+        float position, window, shapeA, shapeB, inharm, spread, bandShift;
     };
     Shaper sh_;
 
@@ -628,8 +774,14 @@ class FoxTailOsc
     float winEnd_;
     float bandScale_;  // log2(ratio) -> band position
 
-    float bandLSmooth_[kNumBands];
-    float bandRSmooth_[kNumBands];
+    float bandGainSmooth_[kNumBands];
+    float bandGainStep_[kNumBands]; // gain[b+1] - gain[b], for the Shepard crossfade
+    float bandSeed_[kNumBands];     // partial the band fills out from
+    float bandGate_[kNumBands];     // how far the fill has reached, in partials
+    float bandSpanLo_[kNumBands];
+    float bandSpanW_[kNumBands];
+    float panDelta_[2 * kSlots];    // offsets from centre, per slot, L/R interleaved
+    float bandShift_;               // multiplier on sel: slides envelope + comb
     float meter_[kNumBands];
     bool  audible_[kNumBands];
     float bandLoRatio_[kNumBands];

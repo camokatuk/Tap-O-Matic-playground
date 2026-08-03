@@ -85,6 +85,9 @@ static inline float PanPot(int idx) { return hw.GetPanKnob(idx); }
 
 // Physical slider 1 is inharmonicity, pot 1 is fine tune; the bands start at 2.
 static constexpr int kBandOffset = 1;
+// First band with a shape pot: pots 2-3 are the spread pair, so the six left
+// over land on bands 2..7.
+static constexpr int kFirstShapeBand = 2;
 static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm)
 
 // --- Diagnostics ------------------------------------------------------------
@@ -120,7 +123,17 @@ static constexpr float kFreqMin = 20.0f;
 static constexpr float kFreqMax = 200.0f;
 static constexpr float kPitchOctaves = 3.32192809f; // log2(kFreqMax / kFreqMin)
 static constexpr float kMaster  = 0.7f;
-static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
+static constexpr float kFineDeadzone = 0.05f; // fine tune centre snap, in travel
+
+// QUIRKS=1 gives the spectral shift pot a two-hour centre detent in software.
+// A pot with a mechanical detent does not need it; this unit's has none, and
+// the neutral position of a spectrum-wide control is worth being certain of.
+// Two hours of a ten-hour sweep is 20% of travel, so +-0.2 in bipolar units.
+#ifndef FOXTAIL_QUIRKS
+#define FOXTAIL_QUIRKS 0
+#endif
+static constexpr float kShiftDeadzone = FOXTAIL_QUIRKS ? 0.2f : 0.0f;
+
 
 // --- Calibration ------------------------------------------------------------
 // Two-point (1V/3V) V/oct via libDaisy's VoctCalibration, plus the CV nulls.
@@ -210,6 +223,15 @@ foxtail::Controls   controls;
 static inline float clampf(float x, float lo, float hi)
 {
     return x < lo ? lo : (x > hi ? hi : x);
+}
+
+// Pot travel as a bipolar -1..1 with a centre deadzone, the remaining travel
+// rescaled so the ends still reach full. At dz = 0 this is the identity.
+static inline float Detented(float pot, float dz)
+{
+    const float x  = clampf(pot, 0.0f, 1.0f) * 2.0f - 1.0f;
+    const float ax = fabsf(x) - dz;
+    return ax <= 0.0f ? 0.0f : (x < 0.0f ? -ax : ax) / (1.0f - dz);
 }
 
 // CV jacks read a small nonzero value unpatched (~-0.02 on this unit), and it
@@ -409,23 +431,22 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     controls.inharm = clampf(Slider(0) + LevelCv(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
-    // Pot 1 -> fine tune, +-1 semitone, clockwise = sharp. A small centre
-    // deadzone keeps 12 o'clock exactly in tune despite ADC noise; the
-    // remaining travel is rescaled to the full range.
-    {
-        const float x  = clampf(PanPot(0), 0.0f, 1.0f) * 2.0f - 1.0f;
-        const float ax = fabsf(x) - kFineDeadzone;
-        controls.fineTune = ax <= 0.0f
-                                ? 0.0f
-                                : (x < 0.0f ? -ax : ax) / (1.0f - kFineDeadzone);
-    }
+    // Pot 1 -> spectral shift, under slider 1's inharmonicity: both bend the
+    // whole spectrum. Pot 2 -> fine tune, under the fundamental's own band.
+    // Pot 3 -> stereo spread.
+    controls.bandShift = 0.5f + 0.5f * Detented(PanPot(0), kShiftDeadzone);
+    controls.fineTune  = Detented(PanPot(1), kFineDeadzone);
+    controls.spread    = clampf(PanPot(2), 0.0f, 1.0f);
 
     for (int b = 0; b < foxtail::kNumBands; ++b)
     {
         const int s = b + kBandOffset;
         controls.bandGain[b] = clampf(Slider(s) + LevelCv(s), 0.0f, 1.0f);
-        controls.bandPan[b]  = clampf(PanPot(s), 0.0f, 1.0f);
     }
+    // Pots 4-9 shape bands 2-7. Bands 0-1 hold two partials each, so there is
+    // no fill order to choose; they keep the Controls default of 0 (lowpass).
+    for (int b = kFirstShapeBand; b < foxtail::kNumBands; ++b)
+        controls.bandShape[b] = clampf(PanPot(b + 1), 0.0f, 1.0f);
 
     // Knob 1: pitch, exponential sweep (constant octaves per degree of
     // rotation, so the detent sits at the geometric mean of the range, not the

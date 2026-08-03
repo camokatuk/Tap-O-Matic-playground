@@ -179,6 +179,21 @@ the *controls* alive. If more partials are ever wanted, the lever is Cluster's
 per-partial math (incremental cluster-start instead of `floor()`), not the
 render loop.
 
+### Costing a change before flashing it
+
+`python3 tools/loop_cost.py` disassembles the engine for the H750 with the
+firmware's flags and counts the innermost loops; `--update` rewrites
+`tools/loop_cost.json`, `--root DIR` measures a prototype tree instead. Baseline:
+**189 instructions per partial per block** (render 15 x5 frames + block loop
+114). Against the table above that prices one block-loop instruction at ~0.26%
+CPU and one render-loop instruction at ~1.3% — so **2 block-loop instructions
+cost the same as one partial**. It derives 0.51%/partial from the disassembly,
+which is the measured 0.52% arrived at independently.
+
+Static instructions, not cycles: it cannot see VSQRT's 14 unpipelined cycles or
+memory stalls, so treat the CPU figure as a ratio, not a reading. The hardware
+meter stays the ground truth.
+
 ### Hard-won rules (each cost a debugging session)
 
 1. **No libm in the per-partial path.** `std::sqrt` emits VSQRT (14 unpipelined

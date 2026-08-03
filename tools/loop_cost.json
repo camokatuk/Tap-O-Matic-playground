@@ -1,0 +1,38 @@
+{
+  "loops": {
+    "Process#1": {
+      "insns": 15,
+      "lines": [
+        281,
+        287
+      ],
+      "vsqrt": 0
+    },
+    "UpdateBlock#1": {
+      "insns": 114,
+      "lines": [
+        520,
+        606
+      ],
+      "vsqrt": 1
+    },
+    "UpdateBlock#2": {
+      "insns": 59,
+      "lines": [
+        483,
+        497
+      ],
+      "vsqrt": 2
+    },
+    "UpdateBlock#3": {
+      "insns": 44,
+      "lines": [
+        520,
+        559
+      ],
+      "vsqrt": 1
+    },
+    "__total__": 189
+  },
+  "note": "regenerate with tools/loop_cost.py --update"
+}

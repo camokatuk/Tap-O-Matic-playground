@@ -41,7 +41,9 @@ to end. Docs: `docs/claude/oscillator-impl.md` (repo architecture),
 `docs/claude/control-maps.md` (control map, engine, measured facts — the living
 doc), `docs/claude/pigments-harmonic-engine.md` (commercial reference),
 `docs/claude/archives.md` (closed investigations and rolled-back attempts —
-read only if you need the history behind a rule, never for current behaviour).
+read only if you need the history behind a rule, never for current behaviour),
+`docs/claude/patch-book.md` (settings that produce a specific sound — same rule:
+only when asked).
 Obeys
 the whinebug noise budget: no external RAM, constant work per callback, block
 size 5, never read the audio input.

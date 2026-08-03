@@ -37,6 +37,12 @@ else ifeq ($(MODULE),foxtail)
   ifdef NO_NORM
     C_DEFS  += -DFOXTAIL_CLUSTER_NORM=0
   endif
+  # QUIRKS=1 compensates for this unit's hardware: a software centre detent on
+  # the spectral shift pot, which has no mechanical one. Per-unit, so it is a
+  # flag rather than the default.
+  ifdef QUIRKS
+    C_DEFS  += -DFOXTAIL_QUIRKS=$(QUIRKS)
+  endif
   # Optimise for SPEED, not size. The additive engine's inner loop runs
   # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
   # scheduled, which is enough on its own to blow the audio budget.

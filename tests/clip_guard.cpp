@@ -74,17 +74,16 @@ Meas Run(foxtail::FoxTailOsc& osc, foxtail::Controls c, float seconds = 0.4f)
     return m;
 }
 
-// All eight bands up. cfg 2 pans every band the same way, which puts the WHOLE
-// bank into one channel at unity: +3 dB on cfg 1 and the actual loudest patch
-// the panel can reach. cfg 1 (alternate bands) only gets half the bank there.
+// All eight bands up, fully filled. cfg 0 (no spread) is now the loudest patch
+// the panel can reach: with the spread global, every partial sits at centre and
+// each channel carries 0.707 of the whole bank. Per-band pan used to allow the
+// whole bank in ONE channel at unity, 3 dB worse; that patch no longer exists.
 constexpr int kNumCfg = 3;
 void SetSliders(foxtail::Controls& c, int cfg)
 {
     for (int b = 0; b < foxtail::kNumBands; ++b)
-    {
         c.bandGain[b] = 1.f;
-        c.bandPan[b]  = cfg == 1 ? ((b & 1) ? 1.f : 0.f) : cfg == 2 ? 1.f : 0.5f;
-    }
+    c.spread = cfg == 0 ? 0.f : 1.f;
 }
 
 struct Witness
@@ -98,12 +97,12 @@ struct Witness
 // High density, high partials-per-cluster, window over the whole bank: the
 // patches that slam the clip on the uncompensated engine.
 const Witness kWitnesses[] = {
-    {"hardpan A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 3.01f},
-    {"all-up  A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.05f},
-    {"hardpan A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 2.99f},
-    {"hardpan A=0.90 B=0.95 win=1.0 pos=0.0", 1, 0.90f, 0.95f, 0.f, 1.f, 220.f, 1.75f},
-    {"hardpan A=1.00 B=0.88 win=1.0 pos=0.2", 1, 1.00f, 0.88f, 0.2f, 1.f, 220.f, 1.45f},
-    {"all-up  A=0.75 B=1.00 win=0.8 pos=0.0", 0, 0.75f, 1.00f, 0.f, 0.8f, 220.f, 1.24f},
+    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.08f},
+    {"centred A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.19f},
+    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 2.12f},
+    {"spread  A=0.90 B=0.95 win=1.0 pos=0.0", 1, 0.90f, 0.95f, 0.f, 1.f, 220.f, 1.42f},
+    {"spread  A=1.00 B=0.88 win=1.0 pos=0.2", 1, 1.00f, 0.88f, 0.2f, 1.f, 220.f, 0.92f},
+    {"centred A=0.75 B=1.00 win=0.8 pos=0.0", 0, 0.75f, 1.00f, 0.f, 0.8f, 220.f, 1.28f},
 };
 
 foxtail::Controls WitnessControls(const Witness& w)
@@ -202,7 +201,6 @@ int main()
         for (int b = 0; b < foxtail::kNumBands; ++b)
         {
             c.bandGain[b] = uni(rng);
-            c.bandPan[b]  = uni(rng);
         }
         c.inharm   = uni(rng);
         c.mode     = uni(rng) < 0.5f ? 0 : 1;
@@ -329,10 +327,11 @@ int main()
         c.shapeA  = 1.f;
         c.shapeB  = 0.f;
         const Meas m = Run(osc, c);
-        // 0.4459 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
+        // 0.4925 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
         // compensation is boost=1 and only FastRSqrt(1) = 0.9983 remains.
-        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.4459)", m.peak);
-        Check(std::fabs(m.peak - 0.4459f * 0.9983f) < 0.005f, buf);
+        // Re-measure this whenever the pan layout changes -- it moves the peak.
+        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.4925)", m.peak);
+        Check(std::fabs(m.peak - 0.4925f * 0.9983f) < 0.005f, buf);
     }
     {
         foxtail::Controls c;

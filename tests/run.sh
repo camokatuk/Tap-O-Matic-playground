@@ -15,6 +15,9 @@ CXX_FLAGS="-std=c++14 -O2 -Wall -Wextra"
 c++ $CXX_FLAGS -DFOXTAIL_CLUSTER_NORM=0 -o ../build/tests/clip_guard_raw clip_guard.cpp
 c++ $CXX_FLAGS -o ../build/tests/clip_guard clip_guard.cpp
 c++ $CXX_FLAGS -o ../build/tests/clip_sweep clip_sweep.cpp
+c++ $CXX_FLAGS -o ../build/tests/slot_table slot_table.cpp
+
+../build/tests/slot_table
 
 ../build/tests/clip_guard_raw
 echo

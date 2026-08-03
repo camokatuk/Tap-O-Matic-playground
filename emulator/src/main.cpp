@@ -106,11 +106,15 @@ enum ShaperKnob {
     kNumShaperKnobs,
 };
 
-// Physical sliders/pots, 9 of each, exactly as on the panel. Slider 1 and pot 1
-// are inharmonicity and master level; sliders/pots 2..9 are the 8 bands. The
-// mapping happens in the audio callback so the UI ids stay physical.
+// Physical sliders/pots, 9 of each, exactly as on the panel. Slider 1 is
+// inharmonicity; sliders 2..9 are the 8 band gains. Pot 1 is the spectral
+// shift, pot 2 fine tune, pot 3 stereo spread and pots 4..9 the band shapes.
+// The mapping happens in the audio callback so the UI ids stay physical.
 constexpr int kNumSliders = foxtail::kNumBands + 1; // 9
 constexpr int kBandOffset = 1;
+// Pots 2-3 are the global spread pair, so band shape starts at band 2 (bands
+// 0-1 hold two partials each). Mirrors kFirstShapeBand in FoxTail.cpp.
+constexpr int kFirstShapeBand = 2;
 
 std::atomic<float> g_slider[kNumSliders];       // raw slider values 0..1
 std::atomic<float> g_pot[kNumSliders];          // raw pot values, -1..1
@@ -182,17 +186,23 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         // Pot 1 -> fine tune, -1..+1 semitone (the pot already stores -1..1).
         // No deadzone here: the emulator pot is noise-free; the firmware adds
         // one because a real pot at centre jitters.
-        c.fineTune = g_pot[0].load(std::memory_order_relaxed);
+        c.fineTune = g_pot[1].load(std::memory_order_relaxed); // pot 2
         c.master   = g_master.load(std::memory_order_relaxed);
 
-        // Sliders/pots 2..9 -> the 8 bands.
+        // Sliders 2..9 -> the 8 band gains.
         for (int b = 0; b < foxtail::kNumBands; ++b) {
             const int s = b + kBandOffset;
             float g = g_slider[s].load(std::memory_order_relaxed) + g_srcSlider[s].run(dt);
             c.bandGain[b] = g < 0.f ? 0.f : (g > 1.f ? 1.f : g);
-            // Pots are centre-detented -1..1 on the panel; the DSP wants 0..1.
-            c.bandPan[b] = 0.5f * (g_pot[s].load(std::memory_order_relaxed) + 1.f);
         }
+        // Pots are centre-detented -1..1 on the panel; the DSP wants 0..1.
+        auto pot01 = [](int i) {
+            return 0.5f * (g_pot[i].load(std::memory_order_relaxed) + 1.f);
+        };
+        c.bandShift = pot01(0); // pot 1, under slider 1's inharmonicity
+        c.spread    = pot01(2); // pot 3
+        for (int b = kFirstShapeBand; b < foxtail::kNumBands; ++b)
+            c.bandShape[b] = pot01(b + 1); // pots 4..9
 
         // The four shaper knobs, each summed with its analog CV jack.
         float k[kNumShaperKnobs];
@@ -280,7 +290,7 @@ bool setControl(const std::string& id, float value) {
         return g_srcSlider[idx].set(id.substr(dot + 1), value); // "cv.<leaf>"
     }
 
-    // Pots: "panN" -> per-band pan. No CV jack on the hardware, so no cv route.
+    // Pots: "panN" -> spread pair (2-3) / band shape (4-9). No CV jack in hardware.
     if (startsWith(head, "pan") && dot == std::string::npos) {
         int idx = std::atoi(head.c_str() + 3);
         if (idx < 0 || idx >= kNumSliders) return false;

@@ -112,22 +112,16 @@ Result RunPatch(foxtail::FoxTailOsc& osc, const Patch& p)
 
 void SetSliders(foxtail::Controls& c, int cfg)
 {
-    for (int b = 0; b < foxtail::kNumBands; ++b)
-    {
-        c.bandGain[b] = 0.f;
-        c.bandPan[b]  = 0.5f;
-    }
+    for (int b = 0; b < foxtail::kNumBands; ++b) c.bandGain[b] = 0.f;
+    c.spread = 0.f;
     switch (cfg)
     {
-        case 0: // all up, centred
+        case 0: // all up, no spread — the loudest patch the panel can reach
             for (int b = 0; b < foxtail::kNumBands; ++b) c.bandGain[b] = 1.f;
             break;
-        case 1: // all up, hard-panned alternating — the loudest normal patch
-            for (int b = 0; b < foxtail::kNumBands; ++b)
-            {
-                c.bandGain[b] = 1.f;
-                c.bandPan[b]  = (b & 1) ? 1.f : 0.f;
-            }
+        case 1: // all up, spread wide
+            for (int b = 0; b < foxtail::kNumBands; ++b) c.bandGain[b] = 1.f;
+            c.spread = 1.f;
             break;
         case 2: c.bandGain[0] = 1.f; break;                    // fundamental band only
         case 3: c.bandGain[foxtail::kNumBands - 1] = 1.f; break; // top band only
@@ -140,7 +134,7 @@ void SetSliders(foxtail::Controls& c, int cfg)
 
 const char* SliderName(int cfg)
 {
-    static const char* n[] = {"all-up", "hardpan", "band1", "band8", "descend"};
+    static const char* n[] = {"all-up", "spread", "band1", "band8", "descend"};
     return n[cfg];
 }
 
@@ -193,7 +187,6 @@ int main()
         for (int b = 0; b < foxtail::kNumBands; ++b)
         {
             p.c.bandGain[b] = uni(rng);
-            p.c.bandPan[b]  = uni(rng);
         }
         p.c.inharm   = uni(rng);
         p.c.mode     = uni(rng) < 0.5f ? 0 : 1;
