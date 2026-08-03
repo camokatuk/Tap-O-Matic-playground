@@ -32,6 +32,13 @@
 #include <cstdint>
 #include <cstring>
 
+// Defeats the Cluster collapse compensation. Exists so tests/clip_guard.cpp can
+// A/B the same patches against an uncompensated engine; never set it to 0 in a
+// firmware build.
+#ifndef FOXTAIL_CLUSTER_NORM
+#define FOXTAIL_CLUSTER_NORM 1
+#endif
+
 namespace foxtail {
 
 // The one CPU lever. Bands are geometric (width kNumPartials^(1/kNumBands)),
@@ -134,11 +141,47 @@ static inline float FastRSqrt(float x)
     return y * (1.5f - h * y * y);
 }
 
+// log2(x) for x >= 1, ~2e-5. FastLog2's degree-2 mantissa fit is 100x coarser
+// and cannot be widened in its place — it sits in the per-partial loop.
+static inline float Log2Fine(float x)
+{
+    uint32_t bits;
+    std::memcpy(&bits, &x, sizeof(bits));
+    const int      e     = (int)((bits >> 23) & 0xFFu) - 127;
+    const uint32_t mbits = (bits & 0x007FFFFFu) | 0x3F800000u; // mantissa -> [1,2)
+    float m;
+    std::memcpy(&m, &mbits, sizeof(m));
+    return (float)e + (((((0.043004958f * m - 0.402513394f) * m + 1.589474295f) * m
+                         - 3.489878551f) * m + 5.047855413f) * m - 2.787926207f);
+}
+
+// ln(1+t)/t, for t >= 0. No libm: a logf call runs on every callback once the
+// Cluster knob leaves rest, which is the per-callback burst the noise budget
+// forbids. The series arm carries t -> 0, where any mantissa-extraction log
+// loses every significant digit and the compensation below divides two of these
+// at t down to 5e-5.
+static inline float Log1pOverX(float t)
+{
+    if (t < 0.25f)
+        return 1.f
+               + t * (-0.5f + t * (1.f / 3.f + t * (-0.25f + t * (0.2f - t * (1.f / 6.f)))));
+    return Log2Fine(1.f + t) * (0.69314718f / t);
+}
+
 // Branchless. A ternary compiles to vcmpe + vmrs (FP compare, then copy flags to
 // the core register), which stalls the M7 pipeline; std::fminf/fmaxf give the
 // FPv5 single-instruction vminnm/vmaxnm instead. This runs several times per
 // partial per block, so it is worth the pedantry.
 static inline float Clamp01(float x) { return std::fminf(std::fmaxf(x, 0.f), 1.f); }
+
+// One-pole toward a target, denormal tail flushed. Block rate, so the flush is
+// two compares per control per block, not per partial.
+static inline float Smooth(float& s, float target, float k)
+{
+    s += (target - s) * k;
+    if (s < 1e-20f && s > -1e-20f) s = 0.f;
+    return s;
+}
 
 // Output clip: unity below the knee, parabolic to a hard cap at 2 - knee.
 // The knee sits above the loudest normal patch (peak 0.73, all sliders up and
@@ -190,6 +233,7 @@ class FoxTailOsc
 
         masterSmooth_ = 0.f;
         paritySmooth_ = 0.f;
+        sh_           = Shaper();
         winStart_     = 1.f;
         winEnd_        = 1.f;
 
@@ -332,18 +376,34 @@ class FoxTailOsc
     // below 1 the members beat against each other, which is the chorus zone.
     // Density near 1/4, 1/2 and 1 lands on spectra that imply a subharmonic
     // (e.g. M=2, d=0.5 gives 1, 1.5, 3, 3.5 ... = multiples of f0/2).
-    // rel = max(idx - p, 0), hoisted by the caller: it is shared by both
-    // groupings of the soft-step, and the clamp is what keeps partials below the
-    // window start off a negative cluster start at p - M.
-    static inline float ClusterRatio(float idx, float rel, float p, float m, float invM, float d)
+    // Offset from the window start to the first partial of this cluster.
+    // Returns the START, not the shifted ratio: both groupings of the soft-step
+    // then share one crossfade and one collapse, instead of each carrying its
+    // own copy of both. rel = max(idx - p, 0), hoisted by the caller — the clamp
+    // is what keeps partials below the window start off a cluster start at p - M.
+    static inline float ClusterStart(float rel, float m, float invM)
     {
-        const float c = std::floor(rel * invM);
-        const float s = p + c * m; // first partial of this cluster
-        return idx + d * (s - idx);
+        return std::floor(rel * invM) * m;
     }
 
     void UpdateBlock(const Controls& c)
     {
+        // Every control that reaches a partial's FREQUENCY is smoothed here, the
+        // same way the gains are. Raw, these land on the frequencies once per
+        // block, so ADC noise is random FM at the callback rate — ~2 cents per
+        // LSB with the window collapsed onto one cluster, which is the crackle.
+        // One-poles, NOT the backlash gate that was tried and clicked
+        // (archives.md): a gate makes the noise sparse and larger instead.
+        // Smoothing lives here rather than at the hardware seam so the emulator
+        // gets it too — it runs this engine, and its CV sources must behave like
+        // a patched jack. Pitch is deliberately NOT here: it would lag V/oct.
+        const float k        = smoothCoefBlk_;
+        const float position = Smooth(sh_.position, Clamp01(c.position), k);
+        const float window   = Smooth(sh_.window, Clamp01(c.window), k);
+        const float shapeA   = Smooth(sh_.shapeA, Clamp01(c.shapeA), k);
+        const float shapeB   = Smooth(sh_.shapeB, Clamp01(c.shapeB), k);
+        const float inh      = Smooth(sh_.inharm, Clamp01(c.inharm), k);
+
         // Clamp the effective fundamental to a playable range. Without this, a
         // railed CV input (a gate or +5V source patched into V/OCT reads as +5
         // octaves) pushes every partial past Nyquist: the anti-alias fade mutes
@@ -355,16 +415,77 @@ class FoxTailOsc
         const float hzToInc = 4294967296.f / sampleRate_; // 2^32 / sr
         const float nyqFade = 1.f / (kNyqFadeFrac * nyquist_);
 
+        // Window, in partial-index space, exponential so the low partials (where
+        // the ear cares) get most of the knob travel.
+        const float nf       = (float)kNumPartials;
+        const float logN     = FastLog2(nf);
+        const float winStart = std::exp2(position * logN);
+        const float winWidth = std::exp2(window * logN);
+        const float winEnd   = winStart + winWidth;
+        winStart_ = winStart; // published for the emulator's partial viewer
+        winEnd_   = winEnd;
+
+        // Mode params.
+        const bool  shepard   = (c.mode == kModeShepard);
+        const float phi       = shapeA;
+        // Shepard's knob 5 ducks the windowed partials, INVERTED so the knob at
+        // rest (fully CCW) means unity gain. As a plain gain, the knob sitting
+        // at zero silenced everything inside the window — with knob 3 wide that
+        // is the whole bank, so Shepard sounded "dead" at the exact physical
+        // knob positions where Cluster (knob 5 = density) sounded fine.
+        const float winGain   = shepard ? 1.f - shapeB : 1.f;
+        const float density   = std::fminf(shapeB, kDensityMax);
+        // Partials per cluster: soft-step, integer part sets the grouping and the
+        // fraction crossfades between groupings. Ceiling is half an octave past
+        // kNumPartials so the knob can reach a single cluster. logN, not log2():
+        // the latter promotes to double and calls libm once per block.
+        const float mF   = std::exp2(shapeA * (logN + 0.5f));
+        const float mLo  = std::floor(mF);
+        const float mFrac = mF - mLo;
+        const float mHi  = mLo + 1.f;
+        const float invLo = 1.f / mLo;
+        const float invHi = 1.f / mHi;
+
+        // Cluster collapse concentrates the bank: a cluster's partials span
+        // m - 1 ratio steps (m of them, one step apart), compressed by (1-d),
+        // and the 1/sqrt(r) tilt makes the pile louder as it slides down.
+        // Summed power under that tilt is ~ln(1+span/s)/span, so with
+        // x = (m-1)/s and y = x(1-d) the compressed:spread power ratio is
+        // R(y)/R(x), R(t) = ln(1+t)/t. m-1, not m: at m = 1 nothing shifts,
+        // and the span form makes the boost exactly 1 there for any density.
+        // Undoing the boost holds RMS flat across the density knob, which is
+        // what keeps Cluster off the clip.
+        //
+        // Derived from control values ONLY. A gain computed from the engine's
+        // own amp state instead produced hardware-only ~8 kHz artifacts twice
+        // (archives.md); that feedback structure must not come back.
+        const float s0    = std::fmaxf(winStart, 1.f);
+        const float nWin  = std::fmaxf(std::fminf(winEnd, nf) - s0, 1.f);
+        const float x     = std::fminf(mF - 1.f, nWin) / s0;
+        const float y     = x * (1.f - density);
+        const float boost = Log1pOverX(y) / Log1pOverX(x);
+        // Smoothed at block rate like the band gains: knob 5 moves this ~2.6x
+        // faster than Shepard's duck moves winGain, and a gain stepping at
+        // block rate is an AM sideband at the callback rate (whinebug.md).
+        const float norm = (shepard || !FOXTAIL_CLUSTER_NORM) ? 1.f : FastRSqrt(boost);
+
         // Fold gain and pan into per-band L/R gains, then smooth those. Equal
         // power: L^2 + R^2 = 1. Interpolating already-equal-power endpoints per
         // partial is not exactly equal power, but the error is inaudible and it
         // saves two transcendentals per partial.
+        //
+        // The Cluster compensation rides in here, not in the partial loop:
+        // these are already per-block values that the loop multiplies in, so
+        // the hot path keeps the exact instruction sequence it was tuned with,
+        // and the band smoother doubles as the compensation's smoother. Two
+        // extra instructions in the partial loop brought the Cluster overtones
+        // back with the audio bit-identical (archives.md) — keep it out of there.
         for (int b = 0; b < kNumBands; ++b)
         {
             const float g  = Clamp01(c.bandGain[b]);
             const float pn = Clamp01(c.bandPan[b]);
-            const float tl = g * std::sqrt(1.f - pn);
-            const float tr = g * std::sqrt(pn);
+            const float tl = g * std::sqrt(1.f - pn) * norm;
+            const float tr = g * std::sqrt(pn) * norm;
             bandLSmooth_[b] += (tl - bandLSmooth_[b]) * smoothCoefBlk_;
             bandRSmooth_[b] += (tr - bandRSmooth_[b]) * smoothCoefBlk_;
             // Flush the one-pole tails to zero. Left alone they decay into
@@ -380,41 +501,9 @@ class FoxTailOsc
 
         // Inharmonicity coefficient. Exponential so the musically useful low end
         // (piano-ish stretch) gets most of the slider travel.
-        const float inh     = Clamp01(c.inharm);
         const float inharmB = inh <= 0.f
                                   ? 0.f
                                   : kInharmMax * (std::exp2(inh * 8.f) - 1.f) / 255.f;
-
-        // Window, in partial-index space, exponential so the low partials (where
-        // the ear cares) get most of the knob travel.
-        const float nf       = (float)kNumPartials;
-        const float logN     = FastLog2(nf);
-        const float winStart = std::exp2(Clamp01(c.position) * logN);
-        const float winWidth = std::exp2(Clamp01(c.window) * logN);
-        const float winEnd   = winStart + winWidth;
-        winStart_ = winStart; // published for the emulator's partial viewer
-        winEnd_   = winEnd;
-
-        // Mode params.
-        const bool  shepard   = (c.mode == kModeShepard);
-        const float phi       = Clamp01(c.shapeA);
-        // Shepard's knob 5 ducks the windowed partials, INVERTED so the knob at
-        // rest (fully CCW) means unity gain. As a plain gain, the knob sitting
-        // at zero silenced everything inside the window — with knob 3 wide that
-        // is the whole bank, so Shepard sounded "dead" at the exact physical
-        // knob positions where Cluster (knob 5 = density) sounded fine.
-        const float winGain   = shepard ? 1.f - Clamp01(c.shapeB) : 1.f;
-        const float density   = std::fminf(std::fmaxf(c.shapeB, 0.f), kDensityMax);
-        // Partials per cluster: soft-step, integer part sets the grouping and the
-        // fraction crossfades between groupings. Ceiling is half an octave past
-        // kNumPartials so the knob can reach a single cluster. logN, not log2():
-        // the latter promotes to double and calls libm once per block.
-        const float mF   = std::exp2(Clamp01(c.shapeA) * (logN + 0.5f));
-        const float mLo  = std::floor(mF);
-        const float mFrac = mF - mLo;
-        const float mHi  = mLo + 1.f;
-        const float invLo = 1.f / mLo;
-        const float invHi = 1.f / mHi;
 
         // Window edges are tapered, not hard. A boolean edge means a partial
         // crossing it jumps frequency instantly, so sweeping SPREAD or FEEDBACK
@@ -445,9 +534,10 @@ class FoxTailOsc
             else
             {
                 const float rel = std::fmaxf(idx - winStart, 0.f);
-                const float rLo = ClusterRatio(idx, rel, winStart, mLo, invLo, density);
-                const float rHi = ClusterRatio(idx, rel, winStart, mHi, invHi, density);
-                shifted         = rLo + (rHi - rLo) * mFrac;
+                const float cLo = ClusterStart(rel, mLo, invLo);
+                const float cHi = ClusterStart(rel, mHi, invHi);
+                const float s   = winStart + cLo + (cHi - cLo) * mFrac;
+                shifted         = idx + density * (s - idx);
             }
 
             float ratio = idx + w * (shifted - idx);
@@ -520,10 +610,19 @@ class FoxTailOsc
     float sampleRate_;
     float nyquist_;
     float  smoothCoef_;    // per sample  (master)
-    float  smoothCoefBlk_; // per block   (band gains/pans)
+    float  smoothCoefBlk_; // per block   (band gains/pans, parity, shaper set)
     size_t lastFrames_;
     float  masterSmooth_;
     float  paritySmooth_;
+
+    // The controls that reach partial FREQUENCIES. Grouped because they share a
+    // reason to be smoothed and a coefficient; the gains are smoothed elsewhere
+    // (folded, per band) because they reach amplitude instead.
+    struct Shaper
+    {
+        float position, window, shapeA, shapeB, inharm;
+    };
+    Shaper sh_;
 
     float winStart_;
     float winEnd_;

@@ -32,6 +32,11 @@ else ifeq ($(MODULE),foxtail)
   ifdef CV_NULL
     C_DEFS  += -DFOXTAIL_CV_NULL=$(CV_NULL)
   endif
+  # NO_NORM=1 defeats the Cluster collapse compensation, for A/B-ing it against
+  # a symptom on hardware. tests/run.sh builds the same flag.
+  ifdef NO_NORM
+    C_DEFS  += -DFOXTAIL_CLUSTER_NORM=0
+  endif
   # Optimise for SPEED, not size. The additive engine's inner loop runs
   # kNumPartials x 48000 times a second; -Os leaves it unrolled and badly
   # scheduled, which is enough on its own to blow the audio budget.

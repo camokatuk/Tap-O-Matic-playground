@@ -23,6 +23,7 @@
 #include "daisy_patch_sm.h"
 #include "time_machine_hardware.h"
 #include "foxtail_dsp.h"
+#include "foxtail_diag.h"
 
 #include <cmath>
 
@@ -117,6 +118,7 @@ static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm
 // additive bank, and the partials, not the root, carry the top of the range.
 static constexpr float kFreqMin = 20.0f;
 static constexpr float kFreqMax = 200.0f;
+static constexpr float kPitchOctaves = 3.32192809f; // log2(kFreqMax / kFreqMin)
 static constexpr float kMaster  = 0.7f;
 static constexpr float kFineDeadzone = 0.05f; // pot 1 centre snap, in travel
 
@@ -195,9 +197,7 @@ static constexpr float    kKnobDeadband = 0.004f;
 Led  leds[kNumLeds];
 GPIO switch1; // left  — CLUSTER / SHEPARD
 GPIO switch2; // right — parity: all / odd only
-#if FOXTAIL_SERIAL_LOG
-CpuLoadMeter loadMeter;
-#endif
+foxdiag::Diag diag; // all methods compile to nothing without FOXTAIL_SERIAL_LOG
 
 // Park the oscillator (partial state + sine table) in DTCM: uncached, zero wait
 // state, no bus arbitration, so every sample costs the same. Default .bss goes
@@ -402,9 +402,7 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
                    AudioHandle::OutputBuffer out,
                    size_t                    size)
 {
-#if FOXTAIL_SERIAL_LOG
-    loadMeter.OnBlockStart();
-#endif
+    diag.BlockStart();
 
     hw.ProcessAllControls();
 
@@ -434,7 +432,10 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     // arithmetic one). V/OCT jack adds octaves through the stored calibration
     // (scale/offset are in semitones, hence /12).
     float t          = clampf(BigKnob(0), 0.0f, 1.0f);
-    controls.pitchHz = kFreqMin * powf(kFreqMax / kFreqMin, t);
+    // exp2f, not powf: the base is constant, so b^t == exp2(t*log2(b)) exactly,
+    // and powf is the most expensive call in the block path (it is exp(t*log(b))
+    // internally, with the log recomputed every callback).
+    controls.pitchHz = kFreqMin * exp2f(t * kPitchOctaves);
     controls.pitchCv = (g_voctScale * hw.GetAdcValue(kKnob1Cv) + g_voctOffset) * (1.0f / 12.0f);
 
     controls.position = knobPlusCv(1);
@@ -453,9 +454,7 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     // stereo added later.
     osc.Process(controls, out[1], out[0], size);
 
-#if FOXTAIL_SERIAL_LOG
-    loadMeter.OnBlockEnd();
-#endif
+    diag.BlockEnd(out[0], out[1], size);
 }
 
 int main(void)
@@ -516,7 +515,7 @@ int main(void)
     osc.Init(hw.AudioSampleRate());
 
 #if FOXTAIL_SERIAL_LOG
-    loadMeter.Init(hw.AudioSampleRate(), 5);
+    diag.Init(hw.AudioSampleRate(), 5);
 #endif
 
     hw.StartAudio(audioCallback);
@@ -544,6 +543,7 @@ int main(void)
 
     while (true)
     {
+        diag.MainLoopTick();
         uint32_t now = System::GetNow();
         if (now - last_led_ms >= 1)
         {
@@ -610,9 +610,9 @@ int main(void)
             // printing the control seam as the engine receives it. pos/win/A/B
             // are knob PLUS CV jack — A/B against the emulator with these
             // numbers, not with physical knob angles.
-            static bool logAlt = false;
-            logAlt = !logAlt;
-            if (logAlt)
+            static int logAlt = 0;
+            logAlt = (logAlt + 1) % 3;
+            if (logAlt == 1)
             {
                 hw.PrintLine("pot1=" FLT_FMT(3) " fine=" FLT_FMT(3)
                              " pos=" FLT_FMT(3) " win=" FLT_FMT(3)
@@ -631,7 +631,7 @@ int main(void)
                                                     + controls.fineTune
                                                           * (1.0f / 12.0f))));
             }
-            else
+            else if (logAlt == 2)
             {
                 hw.PrintLine("p=%d s%d%d cv[" FLT_FMT(2) " " FLT_FMT(2) " "
                              FLT_FMT(2) " " FLT_FMT(2) " " FLT_FMT(2) " "
@@ -648,8 +648,14 @@ int main(void)
                              FLT_VAR(2, hw.GetAdcValue(LEVEL_DRY_CV)),
                              FLT_VAR(3, hw.GetAdcValue(kKnob1Cv)),
                              FLT_VAR(2, controls.pitchCv),
-                             FLT_VAR(1, loadMeter.GetAvgCpuLoad() * 100.f),
-                             FLT_VAR(1, loadMeter.GetMaxCpuLoad() * 100.f));
+                             FLT_VAR(1, diag.AvgCpu()),
+                             FLT_VAR(1, diag.MaxCpu()));
+            }
+            else
+            {
+                // Health line, all counters per window. Field key and the
+                // reasoning behind each counter: foxtail_diag.h.
+                diag.PrintStatus(hw);
             }
             last_log_ms = now;
         }

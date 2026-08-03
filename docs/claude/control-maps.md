@@ -42,10 +42,16 @@ and subtracted in `KnobCv()`/`LevelCv()`, the only two places a CV meets a panel
 control. Do not "fix" this by rescaling the knobs — that bakes the jack's bias
 into the panel.
 
-Knobs 2–5 (+ their CVs) are read RAW — do not re-add conditioning. A
-backlash-gate + one-pole conditioner was tried and audibly clicked
-(`archives.md`); with the window taper outside the window, raw knob noise is
-inaudible.
+Knobs 2–5 (+ their CVs) are smoothed by a PLAIN one-pole in the engine
+(`UpdateBlock`, the `sh_` set, at the band-gain time constant). These land on
+partial frequencies, so raw ADC noise there is FM at the callback rate (~2 cents
+per LSB with the window collapsed onto one cluster). Smoothing lives in the
+engine, not the hardware seam, so the emulator gets it too. What must NOT come
+back is the backlash GATE: a gate + one-pole was tried, audibly clicked, and was
+rolled back (`archives.md`) — it converts dense tiny noise into sparse larger
+steps. A plain smoother does the opposite. Pitch (knob 1 / V-oct) is left
+unsmoothed on purpose: smoothing it would lag V/oct tracking, and pitch noise is
+common-mode vibrato, far less audible than the shaper's differential FM.
 
 ## Design rationale
 
@@ -86,8 +92,10 @@ across it.
   stranded high in the spectrum and could not be removed. The window taper sits
   **outside** the window (a partial at `winStart` is already fully shifted);
   inside, a full-width window left the top ~9 partials at ~20 kHz whatever the
-  other knobs did. `ClusterRatio` clamps its `floor()` at 0 — below `winStart` it
-  goes negative and puts the cluster start at `p − M`.
+  other knobs did. `ClusterStart` clamps its `floor()` input at 0 — below
+  `winStart` it would go negative and put the cluster start at `p − M`. (It
+  returns the cluster START; the two soft-step groupings share one collapse and
+  one crossfade instead of each carrying its own — cheaper, audio unchanged.)
 - **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
   at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
   the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
@@ -118,11 +126,16 @@ one; it peaks 0.73.
 
 Cluster at high density is the loud exception: tilt and band envelope are
 sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
-real power (~13 dB at full density), which lands on the clip. Two dynamic
-compensations were tried and ROLLED BACK — both produced loud hardware-only
-artifacts, and neither mechanism was ever explained (`archives.md`; do not build
-another gain that feeds engine amp state back into `master`). The open plan is a
-static knob-position → gain table; until then the clip owns it.
+real power (~13 dB at full density). A **control-only** compensation now handles
+it (`norm` in `UpdateBlock`, folded into the per-band L/R gains): the collapsed
+power under the 1/√r tilt is ~ln(1+t)/t, so undoing the compressed:spread ratio
+holds RMS flat across the density knob (`Log1pOverX`, libm-free). It is derived
+from the density/partials/window geometry ALONE — never from engine amp state,
+which is the structure that made two earlier attempts throw hardware-only ~8 kHz
+artifacts (`archives.md`; do not build a gain that feeds amp state back into
+`master`). RMS is now flat within 1.5 dB across the knob; PEAK still is not
+(collapse raises crest factor), so the clip still catches the loudest transients
+— see todo item 0 for the remaining headroom gap.
 
 **Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.**
 Below the knee the output stage is bit-exact; only Cluster crosses it, and only

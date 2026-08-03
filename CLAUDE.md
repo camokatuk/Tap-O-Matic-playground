@@ -53,6 +53,9 @@ size 5, never read the audio input.
   Cluster, the worst-case mode — see control-maps.md before changing it).
 - `FoxTail.cpp` (repo root): thin hardware shell — controls → `Controls`,
   V/oct calibration, LED views, serial diagnostics. Osc object lives in DTCM.
+- `foxtail_diag.h` (repo root): the serial health meter (`foxdiag::Diag`),
+  firmware-only. With `FOXTAIL_SERIAL_LOG` off every method is an empty inline,
+  so a listening build keeps the callback's exact instruction sequence.
 - `emulator/`: `./emulator/run.sh` → http://localhost:4343. Runs the identical
   engine at the firmware's 5-frame block size — never weaken that equivalence.
   `emulator/src/sources.h` = emulator-only CV sources (env/LFO stand-ins for
@@ -115,10 +118,14 @@ normally) so a unit that only needs nulls skips the pitch fit. Don't "fix"
 travel by rescaling the knobs; see control-maps.md.
 
 **Diagnostics:** `FOXTAIL_SERIAL_LOG` (or `make MODULE=foxtail SERIAL_LOG=1`)
-prints one status line/s: CV values, voct raw/octaves, cpu avg/max. It is the
+rotates three status lines/s: (1) pot/knob values + effective f0, (2) CV values,
+voct raw/octaves, cpu avg/max, (3) a health line from `foxtail_diag.h` —
+`peak`/`late`/`gap`/`loops`/`out`/`clip`/`d` (field key in that file). It is the
 only CPU readout, and it includes its own USB load — read the figures as an
 upper bound when retuning `kNumPartials`. Tracking check: 1 V → 3 V patched
 must step the voct octaves by exactly 2.000. Keep it at 0 for listening.
+`make MODULE=foxtail NO_NORM=1` builds with the Cluster gain compensation
+defeated, for A/B-ing it against a symptom on hardware.
 
 **Panel labels.** The SVG (`panel/Fox-Tail.svg`) is the source of truth.
 `emulator/controls.json` maps control id → `<tspan>` id. Edit labels live in the

@@ -59,25 +59,35 @@ That is a code reading, not a test. Worth actually trying `kF0Min = 0.01f` and
 listening: a 96-partial bank at LFO rates is potentially a good drone/texture
 mode, but nothing has been verified by ear.
 
-## 0. Cluster gain: dynamic compensation failed twice — next is a knob LUT
+## 0. Cluster gain compensation — SHIPPED (control-only), parked
 
-Goal (still valid): keep high-density Cluster from slamming the clip without
-robbing the normal modes of level.
+Done for now. A closed-form compensation ships in `UpdateBlock` (`norm`, folded
+into the per-band L/R gains, never into `master`). It is derived from control
+values ONLY — the density/partials/window geometry — so it has none of the
+amp-state → master feedback that made the two earlier attempts throw hardware
+~8 kHz artifacts (post-mortem in `archives.md`). The knob-LUT idea below was the
+previous plan; the closed form replaced it (no offline table to bake).
 
-**The constraint.** Two dynamic gain-riding attempts (a peak-predicting limiter,
-then a power-matching compensation) both produced loud hardware-only ~8 kHz
-artifacts and were rolled back. Both rode `master` with a block-rate gain
-derived from the engine's per-partial amp state, and the mechanism was never
-explained — so the next attempt must not have that feedback structure. Full
-post-mortem and the dead hypotheses (do not re-test them): `archives.md`.
+Mechanism: a collapsed cluster's power under the 1/sqrt(r) tilt is ~ln(1+t)/t,
+so the compressed:spread ratio is R(y)/R(x); `norm = 1/sqrt` of that holds RMS
+flat across the density knob. `Log1pOverX` is libm-free (a series arm near 0, a
+`Log2Fine` polynomial above) — the first version called `logf` per block and
+that burst was audible on hardware. Verified on hardware this session: noise
+gone, RMS flat within 1.5 dB across the density knob.
 
-**Next approach (user's): a static lookup.** Gain as a function of the Cluster
-knob positions only (density, partials-per-cluster, window, position — all
-already smoothed control values), precomputed offline from `tests/clip_sweep.cpp`
-measurements into a small table baked into the firmware. No dependence on any
-runtime engine state. Interpolate the table, fold into `master` or `kHeadroom`.
-To build it: extend clip_sweep to dump RMS over a (B, A, win, pos) grid and
-fit/tabulate the inverse.
+**Known-open, not addressed:** `tests/clip_guard.cpp` still FAILS. RMS is held
+flat but PEAK is not — high-density collapse raises crest factor (~6.4 vs the
+~3.3 `kHeadroom` budgets for), and hard-panning the whole bank into one channel
+is +3 dB over the guard's old worst case. Worst measured peak ~0.96 vs the 0.85
+knee. This is a **headroom** problem, older than the compensation, exposed by
+the improved guard (cfg2 = whole bank one channel; an 8 s window that actually
+sees the beat). Options weighed but not chosen: drop `kHeadroom` ~1 dB (honest,
+costs level everywhere); change the pan law; push the compensation exponent
+toward peak. Left for a later session — deferred with the user.
+
+**Revisit the whole thing if Cluster's behaviour changes** (see item 4): the
+compensation geometry assumes collapse-within-clusters. A Pigments-style
+partial-budget reallocation would need it re-derived.
 
 ## 4. Cluster mode vs Pigments: partial allocation, not a window
 
