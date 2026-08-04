@@ -286,7 +286,11 @@ class FoxTailOsc
         for (int i = 0; i < 2 * kSlots; ++i)
             panDelta_[i] = 0.f; // centred until the first block
         bandShift_ = 1.f;
+        bpShift_   = -0.5f;
         tiltSmooth_ = 0.f;
+        tiltInv_    = 1.f;
+        for (int k = 0; k < kNumPartials; ++k)
+            bpIdx_[k] = FastLog2((float)(k + 1)) * bandScale_;
         for (int b = 0; b < kNumBands; ++b)
         {
             bandGainSmooth_[b] = 0.f;
@@ -564,13 +568,24 @@ class FoxTailOsc
         const float nWin  = std::fmaxf(std::fminf(winEnd, nf) - s0, 1.f);
         const float x     = std::fminf(mF - 1.f, nWin) / s0;
         const float y     = x * (1.f - density);
-        const float boost = Log1pOverX(y) / Log1pOverX(x);
+
+        tiltSmooth_ += (Clamp01(c.tilt) - tiltSmooth_) * smoothCoefBlk_;
+        tiltInv_ = 1.f - tiltSmooth_;
+
+        // R(t) above is the ln form ONLY for the 1/sqrt(r) tilt. Integrating
+        // r^-2a over the collapsed cluster gives ln(1+t)/t at a = 1/2 but
+        // 1/(1+t) at a = 1, so the sawtooth slope needs its own ratio,
+        // (1+x)/(1+y). The tilt morphs between the two, so the boosts do too:
+        // exact at both ends, and the middle is not a power law anyway.
+        // Missing this is what made the density knob swing 6.4 dB when the tilt
+        // changed — the compensation was still solving the old spectrum.
+        const float boostDark   = (1.f + x) / (1.f + y);
+        const float boostBright = Log1pOverX(y) / Log1pOverX(x);
+        const float boost = boostDark + tiltSmooth_ * (boostBright - boostDark);
         // Smoothed at block rate like the band gains: knob 5 moves this ~2.6x
         // faster than Shepard's duck moves winGain, and a gain stepping at
         // block rate is an AM sideband at the callback rate (whinebug.md).
         const float norm = (shepard || !FOXTAIL_CLUSTER_NORM) ? 1.f : FastRSqrt(boost);
-
-        tiltSmooth_ += (Clamp01(c.tilt) - tiltSmooth_) * smoothCoefBlk_;
         // Level compensation for the tilt morph, riding into the band gains
         // beside `norm` for the same reason: both are per-block values the
         // partial loop already multiplies in. Summed over the bank, equal power
@@ -592,7 +607,9 @@ class FoxTailOsc
         // back with the audio bit-identical (archives.md) — keep it out of there.
         for (int b = 0; b < kNumBands; ++b)
         {
-            const float tg = Clamp01(c.bandGain[b]) * norm * tiltNorm;
+            // kHeadroom rides in here rather than the partial loop: it is a
+            // constant, and everything it scaled flows through this gain anyway.
+            const float tg = Clamp01(c.bandGain[b]) * norm * tiltNorm * kHeadroom;
             bandGainSmooth_[b] += (tg - bandGainSmooth_[b]) * smoothCoefBlk_;
             // Flush the one-pole tails to zero. Left alone they decay into
             // denormals, and denormal arithmetic on the M7 is slow enough to
@@ -637,6 +654,7 @@ class FoxTailOsc
         // One multiply on sel in the partial loop covers both, because sel is
         // the only thing either of them is indexed by.
         bandShift_ = std::exp2((0.5f - bShift) * (2.f * kBandShiftOct));
+        bpShift_   = FastLog2(bandShift_) * bandScale_ - 0.5f;
 
 
         // Inharmonicity coefficient. Exponential so the musically useful low end
@@ -732,7 +750,13 @@ class FoxTailOsc
             // smoothstepped, and folded to one load plus one FMA. Free in the
             // budget that matters — `shepard` is loop-invariant, so GCC
             // unswitches it and the Cluster clone carries none of this.
-            const float bp = FastLog2(sel) * bandScale_ - 0.5f;
+            // Cluster indexes the envelope by partial number, so log2(sel) is
+            // log2(k+1) + log2(bandShift) and the first term depends on nothing
+            // a control can move — it is a table, not a computation. Shepard
+            // indexes by the shifted ratio, which really does vary, so it keeps
+            // the call. This was the single most expensive line in the loop.
+            const float bp = shepard ? FastLog2(sel) * bandScale_ - 0.5f
+                                     : bpIdx_[k] + bpShift_;
             int         b  = (int)bp;
             if (bp < 0.f) b = 0;
             if (b > kNumBands - 1) b = kNumBands - 1;
@@ -771,7 +795,7 @@ class FoxTailOsc
             // the in-between positions are usable slopes rather than a crossfade
             // between two spectra.
             const float rt   = FastRSqrt(ratio);
-            const float tilt = rt * (rt + tiltSmooth_ * (1.f - rt));
+            const float tilt = rt * (rt * tiltInv_ + tiltSmooth_);
 
             // Anti-alias fade, branch-free.
             const float fade = Clamp01((nyquist_ - freq) * nyqFade);
@@ -780,7 +804,7 @@ class FoxTailOsc
             // k+1, so k odd == an even partial.
             const float par = (k & 1) ? (1.f - paritySmooth_) : 1.f;
 
-            const float a = tilt * fade * wGain * par * fg * kHeadroom;
+            const float a = tilt * fade * wGain * par * fg;
             // No denormal guard here: the band-gain smoothers are flushed, so a
             // denormal cannot originate upstream, and two compares per partial
             // per block is not free.
@@ -818,8 +842,11 @@ class FoxTailOsc
     float bandSpanHi_[kNumBands];
     float bandSpanW_[kNumBands];
     float tiltSmooth_;              // GATE is a step; this is what keeps it quiet
+    float tiltInv_;                 // 1 - tiltSmooth_, hoisted out of the loop
     float panDelta_[2 * kSlots];    // offsets from centre, per slot, L/R interleaved
     float bandShift_;               // multiplier on sel: slides envelope + comb
+    float bpShift_;                 // log2(bandShift_) folded with the -0.5
+    float bpIdx_[kNumPartials];     // FastLog2(k+1) * bandScale_, Cluster's band lookup
     float meter_[kNumBands];
     bool  audible_[kNumBands];
     float bandLoRatio_[kNumBands];
