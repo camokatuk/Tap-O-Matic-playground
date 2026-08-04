@@ -583,8 +583,12 @@ int main(void)
             // Knobs 2 and 3 set the shaper window, which is otherwise invisible
             // on the module. Touching either flips the LED row to a window view
             // for kPeekMs after the knob stops moving.
-            const float pos = controls.position;
-            const float win = controls.window;
+            //
+            // The PANEL knob only, not controls.position/window — those are
+            // knob + CV, so anything patched to the window jacks re-armed the
+            // peek forever and the level view never came back.
+            const float pos = BigKnob(1);
+            const float win = BigKnob(2);
             if (std::fabs(pos - last_pos) > kKnobDeadband
                 || std::fabs(win - last_win) > kKnobDeadband)
             {
