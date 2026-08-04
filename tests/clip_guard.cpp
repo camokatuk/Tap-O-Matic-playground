@@ -103,16 +103,16 @@ struct Witness
 // A=0.88 now beats A=1.00 as the worst case; it replaces the old pos=0.2
 // witness, which fell to 0.43 and had stopped proving anything.
 const Witness kWitnesses[] = {
-    {"spread  A=0.88 B=1.00 win=1.0 pos=0.0", 1, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.055f},
-    {"centred A=0.88 B=1.00 win=1.0 pos=0.0", 0, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.037f},
-    {"centred A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 1.953f},
-    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 1.931f},
-    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 1.671f},
-    {"centred A=0.75 B=1.00 win=0.8 pos=0.0", 0, 0.75f, 1.00f, 0.f, 0.8f, 220.f, 1.089f},
-    // Bright tilt. Peaks lower than dark both with the compensation and without
-    // it, so it is never the worst case -- but the witness list was all-dark
-    // once and that was luck, not a measurement.
-    {"bright  A=1.00 B=1.00 win=1.0 pos=0.0 f0=880", 2, 1.00f, 1.00f, 0.f, 1.f, 880.f, 1.208f},
+    {"spread  A=0.88 B=1.00 win=1.0 pos=0.0", 1, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.230f},
+    {"centred A=0.88 B=1.00 win=1.0 pos=0.0", 0, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.212f},
+    {"centred A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.925f},
+    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.892f},
+    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 2.510f},
+    {"centred A=0.75 B=1.00 win=0.8 pos=0.0", 0, 0.75f, 1.00f, 0.f, 0.8f, 220.f, 1.629f},
+    // Bright tilt. Lower than dark UNCOMPENSATED, but once the Cluster
+    // compensation was re-derived per tilt the compensated worst case moved to
+    // bright -- so this is not decoration, it is the loud side now.
+    {"bright  A=1.00 B=1.00 win=1.0 pos=0.0 f0=880", 2, 1.00f, 1.00f, 0.f, 1.f, 880.f, 1.810f},
 };
 
 foxtail::Controls WitnessControls(const Witness& w)
@@ -341,12 +341,12 @@ int main()
         c.shapeA  = 1.f;
         c.shapeB  = 0.f;
         const Meas m = Run(osc, c);
-        // 0.1618 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
+        // 0.2434 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
         // compensation is boost=1 and only FastRSqrt(1) = 0.9983 remains.
-        // Re-measure whenever the pan layout or the tilt changes -- both move
-        // the peak, and the tilt moved it 9.7 dB while RMS moved only 5.
-        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.1618)", m.peak);
-        Check(std::fabs(m.peak - 0.1618f * 0.9983f) < 0.005f, buf);
+        // Re-measure whenever kHeadroom, the pan layout or the tilt changes --
+        // all three move it, and it scales linearly with kHeadroom.
+        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.2434)", m.peak);
+        Check(std::fabs(m.peak - 0.2434f * 0.9983f) < 0.005f, buf);
     }
     {
         foxtail::Controls c;

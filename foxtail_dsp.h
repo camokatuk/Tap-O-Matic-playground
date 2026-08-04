@@ -395,10 +395,17 @@ class FoxTailOsc
     // Tuned against the bench harness rather than derived: all sliders up with
     // random phases measures a crest factor of ~3.3 (vs ~9.0 with every partial
     // starting at phase 0 — that 8.8 dB is what phase dispersion buys, and it is
-    // why it is on by default). At 1/5 that puts the normal worst case near
-    // -15 dBFS RMS with peaks around 0.8, leaving the soft clip to catch only
-    // Cluster at high density, where collapsed partials sum coherently.
-    static constexpr float kHeadroom = 1.f / 5.f;
+    // why it is on by default).
+    //
+    // Raised from 1/5 after the tilt went to 1/r, which cost ~5 dB and left the
+    // worst patch anywhere peaking 0.497 against the 0.85 knee — 4.6 dB unused.
+    // 0.30 spends 3.5 dB of that and keeps the guard's contract (nothing reaches
+    // the knee, worst case ~0.75). Sizing this to all-eight-sliders-up is
+    // conservative to begin with: a bank with random phases sums as sqrt(N), so
+    // a normal two- or three-band patch sits 6-9 dB below the case this
+    // protects. Going louder still means deciding that patch may saturate --
+    // which is what a soft clip is for, but it is a contract change, not a tweak.
+    static constexpr float kHeadroom = 0.30f;
 
     // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
     static constexpr float kDensityMax = 0.995f;

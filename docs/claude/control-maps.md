@@ -177,16 +177,28 @@ presets, a master-level pot, an inharmonicity-onset pot): `archives.md`.
 Loudness follows power (Σa²), peak follows amplitude (Σa); they diverge by √N.
 Chosen: **fixed headroom budget, no dynamic normalisation** — the Hammond
 drawbar answer. Random initial phases (free ~9 dB of crest factor) and the tilt,
-scaled so all-up lands around −22 dBFS RMS on the `1/r` slope. Power and peak
+scaled so all-up lands around −19 dBFS RMS on the `1/r` slope. Power and peak
 normalisation were both rejected (`archives.md`). `kHeadroom` rides in the
 per-band gain, not the partial loop — it is a constant and everything it scales
 flows through that gain anyway.
 
-Measured worst case over 37,050 patches: **peak 0.497 against the 0.85 knee**,
-at `cluster f0=880 A=0.88 B=1.00 pos=0 win=1.0`. The bright tilt is the *tamer*
-of the two, 0.409 compensated and 1.208 uncompensated against dark's 0.497 and
-2.005 — so dark is the case to budget against, which is the opposite of what
-"brighter" suggests and was checked rather than assumed.
+`kHeadroom` is **0.30**, raised from 1/5 once the `1/r` tilt had cost ~5 dB and
+left the worst patch peaking 0.497 against a 0.85 knee. Note what it is sized
+against: all eight sliders at maximum. A bank with random phases sums as √N, so
+an ordinary two- or three-band patch sits 6–9 dB below the case being protected
+— every normal patch pays for one nobody plays. Raising it further is a real
+option, but it means accepting that the all-up patch engages the soft clip,
+which changes what `clip_guard` asserts.
+
+Measured worst case over 37,050 patches: **peak 0.613 against the 0.85 knee**,
+at `cluster BRIGHT f0=220 A=0.12 B=0.88 pos=0.50 win=0.75`.
+
+Which tilt is loudest depends on the compensation, so check rather than assume:
+uncompensated, dark is far worse (2.005 vs bright's 1.208), but once the Cluster
+compensation was re-derived per tilt the compensated worst case moved to
+**bright**. Both facts have been measured at different points in the same
+session and the naive reading ("brighter must be louder") was wrong the first
+time and right the second, for reasons that had nothing to do with brightness.
 
 Cluster at high density is the loud exception: tilt and band envelope are
 sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
