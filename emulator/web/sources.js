@@ -233,11 +233,11 @@
         wired: true,
       }));
     });
-    // GATE is digital-only: a plain high/low, no source card. High swings the
-    // spectral tilt from a sawtooth's -6 dB/oct to equal-power-per-octave.
+    // GATE is digital-only: a plain high/low, no source card. High selects ODD
+    // ONLY; low (unpatched) is all partials, which is the neutral state.
     const gate = rowEl("incard",
       rowEl("incard-top", span("incard-title", M.labelOf(M.ctrl.cvInputs.gate)),
-            span("incard-target", "→ bright tilt")));
+            span("incard-target", "→ odd only")));
     const gBox = document.createElement("input");
     gBox.type = "checkbox";
     gBox.dataset.persistId = "gate";
@@ -247,7 +247,7 @@
       const v = gBox.checked ? 1 : 0;
       send("gate", v);
       saveVal("gate", v);
-      status(`GATE: ${v ? "high — bright" : "low — sawtooth tilt"}`);
+      status(`GATE: ${v ? "high — odd partials only" : "low — all partials"}`);
     });
     gate.append(rowEl("ctl", gLab, gBox));
     box.append(gate);

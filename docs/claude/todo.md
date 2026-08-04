@@ -1,42 +1,14 @@
 # Fox Tail — open work
 
-Nothing here is blocking; the firmware is in a good state. The slider/pot map is
-settled and hardware-verified (see `control-maps.md` once it is brought up to
-date — item 1).
+Nothing here is blocking; the firmware is in a good state. The control map is
+settled and hardware-verified — `control-maps.md` is current. Remaining before
+the panel labels are cut: nothing, unless item 1 changes GATE's job again.
 
-## 1. `control-maps.md` is stale
+## 1. GATE input, and sample & hold off the audio inputs
 
-It still documents per-band pan on pots 2..9 and the old 35%-of-a-band gain
-crossfade. Neither exists. What replaced them:
-
-- Sliders 2..9 do gain over their whole travel and, above half, **fill** — how
-  far the band spreads out from its seed. Bottom half = one partial per band.
-- Pots 4..9 place that seed: CCW the band's lowest partial (fills upward),
-  centre its middle (fills outward), CW its highest (fills downward). Distance
-  is measured in **partials**, so a pot means the same thing in a band holding
-  two and one holding thirty-two.
-- Pot 2 = stereo spread width; the pan positions are fixed at `kSlots`, assigned
-  by `kSlotPat` (invariants in `tests/slot_table.cpp`).
-- Pot 3 = shifts the envelope and comb together along the harmonic series,
-  ±1 octave, without moving any partial's frequency.
-- Cluster samples the envelope at the partial **index**, Shepard at the shifted
-  frequency. Sliders pick the ingredients in Cluster and EQ the output in
-  Shepard.
-- The gain crossfade between bands is **Shepard only** and `kXfadeW` wide.
-
-## 2. Run the clip tests
-
-Deferred deliberately while the map was in flux. `tests/clip_guard.cpp` and
-`clip_sweep.cpp` compile against the new `Controls` but have not been run since
-the comb, the new spread and the Cluster index change landed. The hard-coded
-reference in clip_guard's "density 0 untouched" check moves whenever the pan
-layout does — re-measure it with `FOXTAIL_CLUSTER_NORM=0` rather than pasting
-the compensated number, or the assertion goes vacuous.
-
-## 3. GATE input, and sample & hold off the audio inputs
-
-Idea: use GATE to sample something into an internal modulator, with the audio
-inputs as the sampled source — internal modulation without spending a knob.
+Idea: sample something into an internal modulator off the audio inputs —
+internal modulation without spending a knob. NOTE: GATE now carries parity, so
+this needs a different trigger, or parity and the S&H share the jack somehow.
 
 **Blocked on a question first.** `CLAUDE.md` lists "never read the audio input"
 as part of the whinebug noise budget, on the theory that reading it contributes
@@ -44,7 +16,7 @@ to the noise. That theory has not been checked. Read `whinebug.md` and find out
 whether the rule is about the ADC, the codec, or something else before designing
 anything on top of it. CPU is not the concern — a load per frame is nothing.
 
-## 4. Review the `kF0Max = 6000` ceiling
+## 2. Review the `kF0Max = 6000` ceiling
 
 `foxtail_dsp.h`. The stated reason is to stop a railed CV (+5 V = +5 octaves)
 from pushing every partial past Nyquist and silencing the module.
@@ -58,7 +30,7 @@ instead of clamping the root.
 Check before changing: whether anything else assumes an audio-rate `f0`, and
 whether a railed CV really does go silent with the clamp lifted.
 
-## 5. Why is `kF0Min = 8 Hz`?
+## 3. Why is `kF0Min = 8 Hz`?
 
 No recorded reason — the comment next to it only justifies the ceiling. Nothing
 found that would break at LFO rates: the phase increment is
@@ -70,7 +42,7 @@ That is a code reading, not a test. Worth actually trying `kF0Min = 0.01f` and
 listening: a 96-partial bank at LFO rates is potentially a good drone/texture
 mode, but nothing has been verified by ear.
 
-## 6. Shepard band-boundary tick — known, mitigated, watch it
+## 4. Shepard band-boundary tick — known, mitigated, watch it
 
 In Shepard a partial crossing a band boundary stepped in level, which ticked
 once per crossing. Mitigated by the Shepard-only crossfade (`kXfadeW`). If it
@@ -86,11 +58,17 @@ density/partials/window geometry — so it has none of the amp-state → master
 feedback that made two earlier attempts throw hardware ~8 kHz artifacts
 (post-mortem in `archives.md`).
 
-Mechanism: a collapsed cluster's power under the 1/sqrt(r) tilt is ~ln(1+t)/t,
-so the compressed:spread ratio is R(y)/R(x); `norm = 1/sqrt` of that holds RMS
-flat across the density knob. `Log1pOverX` is libm-free — the first version
-called `logf` per block and that burst was audible on hardware.
+Mechanism: a collapsed cluster's power is ~ln(1+t)/t under the 1/sqrt(r) tilt
+but ~1/(1+t) under 1/r, so each slope has its own compressed:spread ratio and
+the two blend with the tilt morph; `norm = 1/sqrt` of that holds RMS flat across
+the density knob. `Log1pOverX` is libm-free — the first version called `logf`
+per block and that burst was audible on hardware.
 
-Working well in practice. Kept open only as a **reminder to re-check peak, not
-just RMS**: high-density collapse raises crest factor, which is a headroom
-question older than the compensation. Re-check as part of item 2.
+**The closed form is tied to the tilt exponent.** Changing the tilt without
+re-deriving it left the compensation solving the old spectrum and the density
+knob swung 6.4 dB; it is now back to 0.9. If the tilt law changes again, redo the
+integral — nothing else catches it.
+
+Peak was the open worry here and it has now been measured: worst peak 0.497 over
+37,050 patches against the 0.85 knee, and the bright tilt is the tamer of the
+two. No headroom gap outstanding. Kept only as a pointer to the derivation.

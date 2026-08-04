@@ -12,22 +12,25 @@ hardware-verified unless marked open.
 | Control | Function | CV? |
 |---|---|---|
 | Slider 1 | inharmonicity amount | yes |
-| Pot 1 | fine tune, ±1 semitone (centre = in tune, clockwise = sharp) | — |
-| Sliders 2–9 | gain of bands 1–8 | yes, 1 each |
-| Pots 2–9 | pan of bands 1–8 | — |
+| Pot 1 | spectral shift: slides envelope + comb ±1 octave along the series | — |
+| Sliders 2–9 | gain of bands 1–8 over full travel; above half, also **fill** | yes, 1 each |
+| Pot 2 | fine tune, ±1 semitone (centre = in tune, clockwise = sharp) | — |
+| Pot 3 | stereo spread width, 0 = mono | — |
+| Pots 4–9 | fill *order* for bands 3–8: CCW highpass, centre bandpass, CW lowpass | — |
 | Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
 | Knob 2 (was SPREAD) | shaper window start | yes |
 | Knob 3 (was FEEDBACK) | shaper window width | yes |
 | Knob 4 (was HPF) | cluster: partials per cluster (soft-step) / shepard: phi | yes |
 | Knob 5 (was LPF) | cluster: density / shepard: window duck (CCW = unity) | yes |
 | Switch 1 (left) | down = CLUSTER, up = SHEPARD | — |
-| Switch 2 (right) | up = ALL partials, down = ODD ONLY | — |
-| GATE | unassigned (digital only — cannot read analog CV) | — |
+| Switch 2 (right) | spectral tilt: up = BRIGHT (1/√r), down = DARK (1/r) | — |
+| GATE | parity: high = ODD ONLY, low (unpatched) = ALL partials. Digital only | — |
 | LED 1 | inharmonicity amount | — |
 | LEDs 2–9 | band levels / shaper-window peek | — |
 
 Hardware facts (measured): switch 1 reads HIGH when down, switch 2 HIGH when up
-(opposite polarities); pot 1 reads with opposite polarity to pots 2–9.
+(opposite polarities). Bands 1–2 hold two partials each, so they have no fill-order
+pot; pots 4–9 cover bands 3–8.
 
 **CV nulls.** The summing jacks (knob CVs 2–5, the nine level CVs) do not read
 0 unpatched — on this unit they sit at about −0.02, and since firmware adds the
@@ -59,23 +62,60 @@ common-mode vibrato, far less audible than the shaper's differential FM.
 `kNumPartials^(1/kNumBands)` — exact octaves when bands = log2(partials) (8 bands
 = octaves at 256). Constant-Q is what matters perceptually; octaves are just a
 round number. Each slider is a breakpoint of a piecewise-linear envelope in
-log-frequency, sitting at its band's **centre** with a flat plateau in the
-crossfade — edge-placed breakpoints made one slider light and sound like three.
-The crossfade is also what keeps a partial's gain continuous as the shaper
-glides it across a band edge.
+log-frequency. A slider owns the partials from its own position up to the next
+slider's, with **no crossfade into the neighbour in Cluster** — the comb picks
+partials strictly per band, so blending the gain across the boundary meant a
+band's survivors drew their level from the slider next door, and a band set to
+highpass kept sounding with its own slider down. Shepard keeps a narrow
+crossfade (`kXfadeW` of a band, linear): there partials slide *through* the
+envelope, and a step at a boundary ticks once per crossing. It is Shepard-only
+because `shepard` is loop-invariant and GCC unswitches it, so Cluster — the
+worst-case mode — carries none of it.
 
-**Brightness is not a knob** — pulling the top sliders down *is* the lowpass,
-with per-band resolution and a CV jack each.
+**Sliders also control fill.** Over the bottom half a slider is level alone,
+with one partial per band sounding; above half it fills the band in. So all
+sliders at half is a skeleton comb of eight partials, and pushing them up adds
+harmonics one at a time. Level and count are deliberately coupled: a band with
+more partials in it *is* louder, and the envelope stays drawable at any level.
+Pots 4–9 choose the fill *order* — which partial the band grows out from —
+measured in **partials, not log-frequency**, so a pot means the same thing in a
+band holding two and one holding thirty-two. Highpass sits at CCW so building a
+hump is one diagonal gesture: a band left of the peak wants to keep the partials
+nearest the peak, which are its high ones.
+
+**Brightness** is mostly the sliders — pulling the top ones down *is* the
+lowpass, with per-band resolution and a CV jack each. The global tilt (GATE)
+is a coarser thing underneath that: which slope the untouched spectrum has.
 
 **Inharmonicity** (slider 1 + CV) is the stiff-string model
 `f_k = k·f0·√(1+B·k²)` — piano-ish low, bell/metallic high — the one thing a
 filter fundamentally cannot fake. The k² law keeps low partials nearly pure on
 its own.
 
-**Fine tune** (pot 1) adds ±1 semitone to the pitch; knob 1's 6.6-octave sweep
-is far too coarse to tune by hand. The firmware snaps a small centre deadzone
-so 12 o'clock is exactly in tune despite pot noise; the emulator pot is exact
-and has none.
+**Fine tune** (pot 2, under the fundamental's own band) adds ±1 semitone to the
+pitch; knob 1's 6.6-octave sweep is far too coarse to tune by hand. The firmware
+snaps a small centre deadzone so 12 o'clock is exactly in tune despite pot
+noise; the emulator pot is exact and has none.
+
+**Spectral shift** (pot 1, under slider 1's inharmonicity — both bend the whole
+spectrum) multiplies the coordinate the envelope and comb are indexed by, ±1
+octave, without moving any partial's frequency. Only *which* partials are
+chosen and how loud. Paired with the skeleton comb it scans the chosen harmonics
+up and down the series. One multiply, because `sel` is the only thing either the
+envelope or the comb is indexed by. `QUIRKS=1` gives it a two-hour software
+centre detent for units whose pot has no mechanical one.
+
+**Spectral tilt** (switch 2) morphs between `1/r` — a sawtooth's −6 dB/octave, what
+an acoustic source does — and `1/√r`, which gives every octave equal power.
+Harmonics are evenly spaced in frequency, so the octave above `r` holds `r`
+partials; `1/√r` therefore sounds ~3 dB/octave brighter than a sawtooth, about
+20 dB over the bank. That brightness makes every band slider equally effective,
+which is a nice panel property, but it leaves the top octaves loud enough to
+hear individual partials beating — exactly what a Shepard glide has to hide.
+Implemented as a **lerp, not a branch**: `shepard` already splits the loop in
+two and a second bool would make it four clones. Level-compensated (`tiltNorm`,
+a quadratic fit to `sqrt(P(0)/P(m))`, worst error 0.06 dB) so the flip changes
+colour and not loudness.
 
 **The shaper (knobs 2–5, switch 1)** retunes partials inside a movable window,
 once per block. Partials outside stay anchored and hold the pitch while the ones
@@ -96,14 +136,33 @@ across it.
   `winStart` it would go negative and put the cluster start at `p − M`. (It
   returns the cluster START; the two soft-step groupings share one collapse and
   one crossfade instead of each carrying its own — cheaper, audio unchanged.)
+  Cluster samples the envelope at the partial **index**, not the shifted
+  frequency, so a slider always owns the same harmonics no matter where the
+  collapse dragged them. With frequency-sampling, sweeping density emptied the
+  top of the spectrum and the upper sliders went dead under your fingers. So
+  sliders pick the *ingredients* in Cluster and *EQ the output* in Shepard —
+  they mean different things per mode, which is the same bargain knobs 4–5
+  already make. Indexing by partial number is also what makes the band lookup a
+  table (see below).
 - **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
   at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
   the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
-  a hump drawn on the sliders + a ramp LFO into knob 4's CV jack = a true
-  Shepard tone as a patch. Narrow window = spectral shear on a slice. Knob 5
-  ducks the window contents, inverted so knob-at-rest = unity (a plain gain
-  muted the whole window at rest, exactly where Cluster's density = 0 is
-  neutral).
+  all sliders up + a ramp LFO into knob 4's CV jack = a Shepard tone as a patch
+  (`patch-book.md`). Narrow window = spectral shear on a slice. Knob 5 ducks the
+  window contents, inverted so knob-at-rest = unity (a plain gain muted the whole
+  window at rest, exactly where Cluster's density = 0 is neutral).
+  - The bank is **finite**, so a shift by one index leaves nothing at the bottom
+    and adds one past the top: the fundamental simply vanished as phi rose. The
+    outermost partials fade to silence by ratio (`kEndFade`), which makes the
+    wrap exact rather than nearly — at phi=0 the sound is {2..96} plus a silent
+    1, at full phi {2..96} plus a silent 97. One partial wide, so only two are
+    ever touched and each fades across a whole sweep.
+  - **Phi's range doubles under ODD ONLY.** The wrap only closes when the
+    surviving set lands back on itself: at phi=1 the odd set {1,3..95} sits on
+    the EVEN positions {2,4..96}, so it jumps; at phi=2 it sits on {3,5..97},
+    itself relabelled. Per block, so free.
+  - It is *not* a Risset glide: `k + phi` moves partial 1 by an octave and
+    partial 72 by 24 cents. What earns the name is the wrap, not uniform motion.
 
 **Random phase is unconditional**, not a switch: phases are seeded randomly at
 init for crest factor (measured 2.8 vs 6.8 aligned — aligned clips at full
@@ -117,25 +176,34 @@ presets, a master-level pot, an inharmonicity-onset pot): `archives.md`.
 
 Loudness follows power (Σa²), peak follows amplitude (Σa); they diverge by √N.
 Chosen: **fixed headroom budget, no dynamic normalisation** — the Hammond
-drawbar answer. Random initial phases (free ~9 dB of crest factor), `1/√r` tilt
-(equal power per geometric band *and* a pink-ish all-up spectrum in one
-multiply), scaled so all-up ≈ −16 dBFS RMS. Power and peak normalisation were
-both rejected (`archives.md`). The loudest normal patch is **all sliders up with
-the pans off centre** — a hard-panned band is +3 dB per channel over a centred
-one; it peaks 0.73.
+drawbar answer. Random initial phases (free ~9 dB of crest factor) and the tilt,
+scaled so all-up lands around −22 dBFS RMS on the `1/r` slope. Power and peak
+normalisation were both rejected (`archives.md`). `kHeadroom` rides in the
+per-band gain, not the partial loop — it is a constant and everything it scales
+flows through that gain anyway.
+
+Measured worst case over 37,050 patches: **peak 0.497 against the 0.85 knee**,
+at `cluster f0=880 A=0.88 B=1.00 pos=0 win=1.0`. The bright tilt is the *tamer*
+of the two, 0.409 compensated and 1.208 uncompensated against dark's 0.497 and
+2.005 — so dark is the case to budget against, which is the opposite of what
+"brighter" suggests and was checked rather than assumed.
 
 Cluster at high density is the loud exception: tilt and band envelope are
 sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
 real power (~13 dB at full density). A **control-only** compensation now handles
-it (`norm` in `UpdateBlock`, folded into the per-band L/R gains): the collapsed
-power under the 1/√r tilt is ~ln(1+t)/t, so undoing the compressed:spread ratio
-holds RMS flat across the density knob (`Log1pOverX`, libm-free). It is derived
-from the density/partials/window geometry ALONE — never from engine amp state,
-which is the structure that made two earlier attempts throw hardware-only ~8 kHz
+it (`norm` in `UpdateBlock`, folded into the per-band gains). It is derived from
+the density/partials/window geometry ALONE — never from engine amp state, which
+is the structure that made two earlier attempts throw hardware-only ~8 kHz
 artifacts (`archives.md`; do not build a gain that feeds amp state back into
-`master`). RMS is now flat within 1.5 dB across the knob; PEAK still is not
-(collapse raises crest factor), so the clip still catches the loudest transients
-— see todo item 0 for the remaining headroom gap.
+`master`). RMS holds flat within 0.9 dB across the density knob.
+
+⚠️ **The compensation's closed form depends on the tilt exponent.** Integrating
+`r^-2a` across a collapsed cluster gives `ln(1+t)/t` at `a = ½` but `1/(1+t)` at
+`a = 1`, so each slope needs its own ratio and the two blend with the tilt morph.
+Changing the tilt and leaving `Log1pOverX` alone left the compensation solving a
+spectrum the engine no longer produced, and the density knob swung **6.4 dB**
+instead of 0.9. If the tilt law ever changes again, re-derive this — the failure
+is silent apart from that one test.
 
 **Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.**
 Below the knee the output stage is bit-exact; only Cluster crosses it, and only
@@ -179,13 +247,20 @@ the *controls* alive. If more partials are ever wanted, the lever is Cluster's
 per-partial math (incremental cluster-start instead of `floor()`), not the
 render loop.
 
+The two clones are **not** the same size, and `loop_cost.py` reports only the
+larger. Cluster is currently 106 instructions and Shepard 123, so the headline
+number tracks Shepard while the CPU budget is set by Cluster. To read them
+apart, look for `vrintm` — that is `ClusterStart`'s `floor()`, and only the
+Cluster clone has it.
+
 ### Costing a change before flashing it
 
 `python3 tools/loop_cost.py` disassembles the engine for the H750 with the
 firmware's flags and counts the innermost loops; `--update` rewrites
 `tools/loop_cost.json`, `--root DIR` measures a prototype tree instead. Baseline:
 **189 instructions per partial per block** (render 15 x5 frames + block loop
-114). Against the table above that prices one block-loop instruction at ~0.26%
+114) — reported against the larger clone, see the note above. Against the table
+above that prices one block-loop instruction at ~0.26%
 CPU and one render-loop instruction at ~1.3% — so **2 block-loop instructions
 cost the same as one partial**. It derives 0.51%/partial from the disassembly,
 which is the measured 0.52% arrived at independently.
@@ -209,6 +284,17 @@ meter stays the ground truth.
    becomes an audible comb.
 5. **Estimates lie; objdump doesn't.** Per-partial cost was mis-attributed
    three times by reasoning from C; the disassembly settled it each time.
+6. **Ask what a line actually depends on.** `FastLog2(sel)` was the single most
+   expensive line in the loop at 13–15 instructions. In Cluster `sel` is
+   `idx * bandShift`, so `log2(sel)` is `log2(k+1) + log2(bandShift)` and the
+   first term depends on nothing a control can move — it was recomputing the
+   same 96 numbers 9,600 times a second. As a table built at `Init` it is a load
+   and an add, and it took Cluster from 119 to 106 on its own. Dump the
+   per-source-line instruction counts before reaching for `kNumPartials`; the
+   caveat is that `FastLog2(a)+FastLog2(b)` is not bit-identical to
+   `FastLog2(ab)`, so band placement shifts by a hair (smooth, monotonic,
+   inaudible under the comb and gain smoothing — but it is a change, not a
+   refactor).
 
 ## LED behaviour
 
@@ -226,7 +312,11 @@ LED 1 = inharmonicity. LEDs 2–9, two views, all main-loop (zero audio cost):
 
 Hardware-verified end to end: engine, all 28 controls, both switches, per-band
 CV, V/oct (calibrated to a few cents over 2 octaves — see CLAUDE.md for the
-procedure and the power-supply gotcha), LEDs, serial diagnostics. Open items:
-GATE assignment, listening-driven tuning of ranges/curves, panel relabeling
-(SVG editor in the emulator), optional switch-direction swaps before labels are
-final.
+procedure and the power-supply gotcha), LEDs, serial diagnostics. The comb, the
+fill-order pots, the global spread, the spectral shift, Cluster-by-index and the
+GATE tilt are all hardware-confirmed, with Cluster measured at ~78% CPU.
+
+The tilt sits on switch 2 and parity on GATE, swapped deliberately: parity's
+"off" state (ALL partials) is genuinely neutral, so the jack costs nothing left
+unpatched, while the tilt has no neutral and needed a control you can see and
+leave set. Open items are in `todo.md`.

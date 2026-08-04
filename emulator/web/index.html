@@ -18,45 +18,48 @@
     <div class="module">
       <div class="panel" id="panel">
 
-        <!-- LEVEL SLIDERS (DRY + 8) -> harmonic amplitudes.
+        <!-- LEVEL SLIDERS (DRY + 8): slider 1 is inharmonicity, 2..9 are the
+             band gains (and, above half travel, each band's fill).
              The 9 column x-positions below are reused by the pots. -->
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
                data-id="amp0" data-label="Slider 1 — inharmonicity" style="left:6.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp1" data-label="Slider 2 — band 1 gain" style="left:17.3%; top:22%; height:28%;" />
+               data-id="amp1" data-label="Slider 2 — band 1 gain + fill" style="left:17.3%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp2" data-label="Slider 3 — band 2 gain" style="left:28.2%; top:22%; height:28%;" />
+               data-id="amp2" data-label="Slider 3 — band 2 gain + fill" style="left:28.2%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp3" data-label="Slider 4 — band 3 gain" style="left:39.1%; top:22%; height:28%;" />
+               data-id="amp3" data-label="Slider 4 — band 3 gain + fill" style="left:39.1%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp4" data-label="Slider 5 — band 4 gain" style="left:50.0%; top:22%; height:28%;" />
+               data-id="amp4" data-label="Slider 5 — band 4 gain + fill" style="left:50.0%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp5" data-label="Slider 6 — band 5 gain" style="left:60.7%; top:22%; height:28%;" />
+               data-id="amp5" data-label="Slider 6 — band 5 gain + fill" style="left:60.7%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp6" data-label="Slider 7 — band 6 gain" style="left:71.5%; top:22%; height:28%;" />
+               data-id="amp6" data-label="Slider 7 — band 6 gain + fill" style="left:71.5%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp7" data-label="Slider 8 — band 7 gain" style="left:82.4%; top:22%; height:28%;" />
+               data-id="amp7" data-label="Slider 8 — band 7 gain + fill" style="left:82.4%; top:22%; height:28%;" />
         <input class="vslider" type="range" min="0" max="1" step="0.001" value="0"
-               data-id="amp8" data-label="Slider 9 — band 8 gain" style="left:93.1%; top:22%; height:28%;" />
+               data-id="amp8" data-label="Slider 9 — band 8 gain + fill" style="left:93.1%; top:22%; height:28%;" />
 
-        <!-- TINY POTS (BAL / pan row) — aligned to the slider columns above. -->
-        <div class="tiny-pot" data-id="pan0" data-label="Pot 1 — fine tune (±1 semitone)"
+        <!-- TINY POTS (the old BAL/pan row) — aligned to the slider columns
+             above. 1 = spectral shift, 2 = fine tune, 3 = spread, 4..9 = each
+             band's fill order. No longer pan; the spread is global now. -->
+        <div class="tiny-pot" data-id="pan0" data-label="Pot 1 — spectral shift (±1 octave)"
              data-min="-1" data-max="1" data-value="0" style="left:6.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan1" data-label="Pot 2 — band 1 pan"
+        <div class="tiny-pot" data-id="pan1" data-label="Pot 2 — fine tune (±1 semitone)"
              data-min="-1" data-max="1" data-value="0" style="left:17.8%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan2" data-label="Pot 3 — band 2 pan"
+        <div class="tiny-pot" data-id="pan2" data-label="Pot 3 — stereo spread"
              data-min="-1" data-max="1" data-value="0" style="left:28.7%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan3" data-label="Pot 4 — band 3 pan"
+        <div class="tiny-pot" data-id="pan3" data-label="Pot 4 — band 3 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:39.6%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan4" data-label="Pot 5 — band 4 pan"
+        <div class="tiny-pot" data-id="pan4" data-label="Pot 5 — band 4 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:50.5%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan5" data-label="Pot 6 — band 5 pan"
+        <div class="tiny-pot" data-id="pan5" data-label="Pot 6 — band 5 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:61.2%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan6" data-label="Pot 7 — band 6 pan"
+        <div class="tiny-pot" data-id="pan6" data-label="Pot 7 — band 6 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:72.0%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan7" data-label="Pot 8 — band 7 pan"
+        <div class="tiny-pot" data-id="pan7" data-label="Pot 8 — band 7 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:82.9%; top:54%;"></div>
-        <div class="tiny-pot" data-id="pan8" data-label="Pot 9 — band 8 pan"
+        <div class="tiny-pot" data-id="pan8" data-label="Pot 9 — band 8 fill order (HP..LP)"
              data-min="-1" data-max="1" data-value="0" style="left:93.6%; top:54%;"></div>
 
         <!-- LARGER KNOBS. TIME is wired (fundamental); the rest are unassigned. -->
@@ -77,7 +80,7 @@
              data-label="Switch 1 — shaper mode" data-states="CLUSTER,SHEPARD" data-value="0"
              style="left:20.85%; top:71.3%;"></div>
         <div class="switch" data-id="switch2"
-             data-label="Switch 2 — parity" data-states="ALL,ODD ONLY" data-value="0"
+             data-label="Switch 2 — spectral tilt" data-states="DARK,BRIGHT" data-value="0"
              style="left:79.7%; top:71.3%;"></div>
       </div>
 
@@ -86,14 +89,18 @@
         <div class="legend-title">What each jack accepts</div>
         <div class="legend-item">
           <span class="swatch cv"></span>
-          <div><b>Analog CV in</b> (bipolar) — DRY, 1–8, SPREAD, TIME, FEEDBACK,
-          HPF, LPF. Continuous voltage that modulates the param.
-          <b>TIME</b> is the pitch input (≈ 1V/oct).</div>
+          <div><b>Analog CV in</b> (bipolar) — continuous voltage summed into the
+          panel control. Jacks still carry their delay-era legends: <b>DRY</b> and
+          <b>1–8</b> are the nine slider CVs (inharmonicity, then the 8 bands);
+          <b>TIME</b> is pitch (calibrated 1V/oct); <b>SPREAD</b> and
+          <b>FEEDBACK</b> are the shaper window's start and width; <b>HPF</b> and
+          <b>LPF</b> are the two per-mode shaper params.</div>
         </div>
         <div class="legend-item">
           <span class="swatch gate"></span>
           <div><b>Gate / trigger in</b> — the GATE jack. Digital on/off only:
-          clock, sync, trigger. Cannot read analog pitch.</div>
+          clock, sync, trigger; cannot read analog pitch. High selects ODD ONLY,
+          low (unpatched) is all partials.</div>
         </div>
         <div class="legend-item">
           <span class="swatch audio"></span>
@@ -133,7 +140,14 @@
         <div id="unassigned" class="unassigned"></div>
       </section>
 
-      <p class="hint">Sliders are 9 octave bands of a 512-partial bank (breakpoints of a piecewise-linear spectral envelope in log-frequency); pots pan each band. The four right-hand knobs drive the shaper — CLUSTER pulls partials toward their cluster start, SHEPARD slides them toward the next partial up. See docs/claude/control-maps.md.</p>
+      <p class="hint">Sliders 2–9 are 8 geometric bands of a 96-partial bank: over
+      their whole travel they set the band's level, and above half they also fill
+      it in — so all sliders at half is a skeleton comb of eight partials. Pots 4–9
+      choose each band's fill order (CCW highpass → centre bandpass → CW lowpass).
+      Pot 1 slides the whole spectral shape ±1 octave, pot 2 is fine tune, pot 3 is
+      stereo spread. The four right-hand knobs drive the shaper — CLUSTER pulls
+      partials toward their cluster start, SHEPARD slides them toward the next
+      partial up. See docs/claude/control-maps.md.</p>
     </aside>
   </div>
 
@@ -146,8 +160,10 @@
     </div>
     <canvas id="partials-canvas"></canvas>
     <div class="hint">Shaded band = shaper window (SPREAD/FEEDBACK). Dashed blue =
-      octave-band edges, one per slider. Red dashes = Nyquist; partials past it fade
-      out and show as faint ticks. Colour is pan: blue left, red right.</div>
+      one marker per slider — bands are geometric, ~0.8 octave each, not true octaves.
+      Red dashes = Nyquist; partials past it fade out and show as faint ticks.
+      Colour is pan: blue left, red right. Gaps in the comb are the sliders' fill
+      and the pots' fill order, not missing partials — silent ones are still rendered.</div>
   </section>
 
   <!-- ===================================================================

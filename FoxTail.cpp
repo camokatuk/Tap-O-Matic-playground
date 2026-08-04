@@ -44,12 +44,15 @@ using namespace oam::time_machine;
 //   Knob 4  (was HIGHPASS)  -> cluster: partials per cluster | shepard: phi
 //   Knob 5  (was LOWPASS)   -> cluster: density | shepard: window duck (CCW = unity)
 //   Switch 1 (left)         -> down = CLUSTER, up = SHEPARD
-//   Switch 2 (right)        -> up = ALL partials, down = ODD ONLY
+//   Switch 2 (right)        -> up = BRIGHT tilt, down = DARK (sawtooth slope)
 //                              (also the "capture" control during calibration)
+//   GATE                    -> high = ODD ONLY (low = all partials)
 //   Slider 1                -> inharmonicity (0 = pure harmonic series)
-//   Pot 1                   -> fine tune, +-1 semitone (centre = in tune)
-//   Sliders 2..9            -> gain of bands 1..8
-//   Pots 2..9               -> pan of bands 1..8
+//   Pot 1                   -> spectral shift, +-1 octave (centre = neutral)
+//   Pot 2                   -> fine tune, +-1 semitone (centre = in tune)
+//   Pot 3                   -> stereo spread width (0 = mono)
+//   Sliders 2..9            -> gain of bands 1..8, and above half their fill
+//   Pots 4..9               -> fill order of bands 3..8 (CCW HP .. CW LP)
 //   LED 1                   -> inharmonicity amount
 //   LEDs 2..9               -> per-band level, or the shaper window while you
 //                              are turning knob 2 or 3 (see main loop)
@@ -83,10 +86,10 @@ static inline float Slider(int idx) { return 1.0f - hw.GetLevelSlider(idx); }
 
 static inline float PanPot(int idx) { return hw.GetPanKnob(idx); }
 
-// Physical slider 1 is inharmonicity, pot 1 is fine tune; the bands start at 2.
+// Physical slider 1 is inharmonicity; the band sliders start at 2.
 static constexpr int kBandOffset = 1;
-// First band with a shape pot: pots 2-3 are the spread pair, so the six left
-// over land on bands 2..7.
+// First band with a fill-order pot: pots 1-3 are spectral shift, fine tune and
+// spread, so the six left over land on bands 2..7 (0-indexed).
 static constexpr int kFirstShapeBand = 2;
 static constexpr int kNumLeds    = 9; // one more than kNumBands (LED 1 = inharm)
 
@@ -209,7 +212,7 @@ static constexpr float    kKnobDeadband = 0.004f;
 
 Led  leds[kNumLeds];
 GPIO switch1; // left  — CLUSTER / SHEPARD
-GPIO switch2; // right — parity: all / odd only
+GPIO switch2; // right — spectral tilt: dark / bright
 foxdiag::Diag diag; // all methods compile to nothing without FOXTAIL_SERIAL_LOG
 
 // Park the oscillator (partial state + sine table) in DTCM: uncached, zero wait
@@ -431,11 +434,10 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     controls.inharm = clampf(Slider(0) + LevelCv(0), 0.0f, 1.0f);
     controls.master = kMaster;
 
-    // GATE: high swings the spectral tilt bright. A gate is an event, so this
-    // reads as "brighter on the accent" with a trigger patched, and as a plain
-    // A/B with a switch or offset. Unpatched reads low = the darker slope.
-    // Smoothed in the engine; the jack is the only free input on the panel.
-    controls.tilt = hw.gate_in_1.State() ? 1.0f : 0.0f;
+    // GATE: high = ODD ONLY. Unpatched reads low, which is ALL partials — the
+    // state most patches want anyway, so the jack costs nothing left empty.
+    // Smoothed in the engine, so a trigger gives rhythmic odd/even gating.
+    controls.parity = hw.gate_in_1.State() ? 1.0f : 0.0f;
 
     // Pot 1 -> spectral shift, under slider 1's inharmonicity: both bend the
     // whole spectrum. Pot 2 -> fine tune, under the fundamental's own band.
@@ -471,8 +473,12 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
     controls.shapeB   = knobPlusCv(4);
 
     // Measured polarity: switch 1 reads HIGH when down, switch 2 HIGH when up.
-    controls.mode   = switch1.Read() ? foxtail::kModeCluster : foxtail::kModeShepard;
-    controls.parity = switch2.Read() ? 0.0f : 1.0f;
+    // Switch 2 is the spectral tilt, up = bright. It holds the tilt rather than
+    // the parity because parity has a genuinely neutral state (ALL) and the
+    // tilt does not — the parameter with a real default is the one that can
+    // live on a jack and be left unpatched.
+    controls.mode = switch1.Read() ? foxtail::kModeCluster : foxtail::kModeShepard;
+    controls.tilt = switch2.Read() ? 1.0f : 0.0f;
 
     // out[0] is the physical RIGHT jack: the output pair is crossed below
     // libDaisy (the delay compensates for the same swap inside panToVolume() in

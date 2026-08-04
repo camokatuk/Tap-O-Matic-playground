@@ -133,8 +133,8 @@ enum ShaperKnob {
 // The mapping happens in the audio callback so the UI ids stay physical.
 constexpr int kNumSliders = foxtail::kNumBands + 1; // 9
 constexpr int kBandOffset = 1;
-// Pots 2-3 are the global spread pair, so band shape starts at band 2 (bands
-// 0-1 hold two partials each). Mirrors kFirstShapeBand in FoxTail.cpp.
+// Pots 1-3 are spectral shift, fine tune and spread, so band shape starts at
+// band 2 (bands 0-1 hold two partials each). Mirrors FoxTail.cpp.
 constexpr int kFirstShapeBand = 2;
 
 std::atomic<float> g_slider[kNumSliders];       // raw slider values 0..1
@@ -143,8 +143,8 @@ std::atomic<float> g_knob[kNumShaperKnobs];     // the four shaper knobs, 0..1
 std::atomic<float> g_pitchHz{63.f};             // knob 1 -> fundamental (20..200 Hz)
 std::atomic<float> g_master{0.7f};              // host master volume
 std::atomic<int>   g_mode{foxtail::kModeCluster}; // switch 1: cluster/shepard
-std::atomic<int>   g_parity{0};                   // switch 2: 0 = all, 1 = odd
-std::atomic<int>   g_gate{0};                     // GATE jack: high = bright tilt
+std::atomic<int>   g_tilt{0};                     // switch 2: 0 = dark (1/r), 1 = bright
+std::atomic<int>   g_gate{0};                     // GATE jack: high = ODD ONLY
 
 CvSource g_srcSlider[kNumSliders];              // per-slider CV source (jack each)
 CvSource g_srcKnob[kNumShaperKnobs];            // per-knob CV source (analog jacks)
@@ -238,8 +238,8 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         c.shapeB   = k[kKnob5];
 
         c.mode        = g_mode.load(std::memory_order_relaxed);
-        c.parity      = g_parity.load(std::memory_order_relaxed) ? 1.f : 0.f;
-        c.tilt        = g_gate.load(std::memory_order_relaxed) ? 1.f : 0.f;
+        c.parity      = g_gate.load(std::memory_order_relaxed) ? 1.f : 0.f;
+        c.tilt        = g_tilt.load(std::memory_order_relaxed) ? 1.f : 0.f;
         c.pitchHz     = g_pitchHz.load(std::memory_order_relaxed);
         c.pitchCv     = g_srcPitch.run(dt) * kPitchMaxOct; // depth already applied
         g_pitchCvDbg.store(c.pitchCv, std::memory_order_relaxed);
@@ -289,7 +289,7 @@ bool setControl(const std::string& id, float value) {
     if (id == "master")    { g_master.store(value, std::memory_order_relaxed);  return true; }
     if (id == "knob1")   { g_pitchHz.store(value, std::memory_order_relaxed); return true; }
     if (id == "switch1")    { g_mode.store((int)value, std::memory_order_relaxed); return true; }
-    if (id == "switch2") { g_parity.store((int)value, std::memory_order_relaxed); return true; }
+    if (id == "switch2") { g_tilt.store((int)value, std::memory_order_relaxed);   return true; }
     if (id == "gate")    { g_gate.store((int)value, std::memory_order_relaxed);   return true; }
 
     // Pitch CV: "knob1.cv.*"  (strip the "knob1." prefix -> "cv.<leaf>")

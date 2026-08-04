@@ -231,7 +231,10 @@ document.querySelectorAll(".switch").forEach((sw) => {
   const apply = (v, silent) => {
     v = v ? 1 : 0;
     sw.dataset.value = v;
-    sw.style.setProperty("--pos", v);
+    // --pos is a rendering position (0 = nub up, 1 = nub down), and both
+    // switches read 1 when physically UP on this hardware — so it is the
+    // inverse of the control value, not the value itself.
+    sw.style.setProperty("--pos", 1 - v);
     reflectMirror(sw, states[v]);
     if (!silent) {
       if (!sw.dataset.unassigned) send(sw.dataset.id, v);
@@ -249,7 +252,8 @@ document.querySelectorAll(".switch").forEach((sw) => {
 });
 
 // ---- Meter polling (LEDs) ---------------------------------------------------
-// One LED per octave band. /meters returns comma-separated levels, one per band.
+// One LED per band (geometric, not octaves). /meters returns comma-separated
+// levels, one per band.
 const leds = Array.from({ length: 9 }, (_, i) => document.getElementById("led" + i));
 async function pollMeters() {
   try {

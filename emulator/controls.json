@@ -47,14 +47,14 @@
   },
   "switches": {
     "switch1": [
-      "tspan4852",
-      "tspan4872"
+      "tspan4872",
+      "tspan4852"
     ],
     "switch2": [
-      "tspan5659",
-      "tspan5679"
+      "tspan5679",
+      "tspan5659"
     ],
-    "_note": "Each switch has two state labels [state0, state1]. switch1 = left, switch2 = right."
+    "_note": "Each switch has two state labels indexed by CONTROL VALUE: [value 0, value 1]. That is NOT panel order — on this hardware both switches read 1 when UP, so index 1 is the upper legend and index 0 the lower. switch1 = left (0 CLUSTER / 1 SHEPARD), switch2 = right (0 DARK / 1 BRIGHT)."
   },
   "cvInputs": {
     "_note": "Slider CVs have no own SVG label -> '<slider label> CV'. Param CVs and the gate use the bottom jack labels.",

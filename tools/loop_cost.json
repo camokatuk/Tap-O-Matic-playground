@@ -3,36 +3,36 @@
     "Process#1": {
       "insns": 15,
       "lines": [
-        281,
-        287
+        344,
+        350
       ],
       "vsqrt": 0
     },
     "UpdateBlock#1": {
-      "insns": 114,
+      "insns": 123,
       "lines": [
-        520,
-        606
+        679,
+        813
       ],
       "vsqrt": 1
     },
     "UpdateBlock#2": {
-      "insns": 59,
+      "insns": 57,
       "lines": [
-        483,
-        497
+        609,
+        632
       ],
-      "vsqrt": 2
+      "vsqrt": 0
     },
     "UpdateBlock#3": {
       "insns": 44,
       "lines": [
-        520,
-        559
+        679,
+        728
       ],
       "vsqrt": 1
     },
-    "__total__": 189
+    "__total__": 198
   },
   "note": "regenerate with tools/loop_cost.py --update"
 }

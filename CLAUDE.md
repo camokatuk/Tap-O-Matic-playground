@@ -67,12 +67,14 @@ size 5, never read the audio input.
   own `/partials` state, computes nothing).
 
 **Control map** (details + rationale in control-maps.md): slider 1 =
-inharmonicity (+CV), pot 1 = fine tune ±1 semitone (centre deadzone in
-firmware); sliders/pots 2–9 = gain/pan of 8
-geometric bands; knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
+inharmonicity (+CV), pot 1 = spectral shift (±1 octave, centre neutral), pot 2 =
+fine tune ±1 semitone (centre deadzone in firmware), pot 3 = stereo spread;
+sliders 2–9 = gain of 8 geometric bands *and*, above half travel, how far each
+band fills in; pots 4–9 = each band's fill order (CCW highpass → CW lowpass);
+GATE = spectral tilt (low = sawtooth slope, high = equal power per octave); knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
 (window start/width, then per-mode params); switch 1 down = CLUSTER / up =
-SHEPARD; switch 2 up = ALL / down = ODD ONLY. GATE (digital-only jack) is still
-unassigned. Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up. Every
+SHEPARD; switch 2 up = BRIGHT tilt / down = DARK.
+Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up. Every
 pot, slider and knob reads full 0..1 travel on a linear taper — assume the
 controls are good. Panel readings are normalized once in
 `Slider()`/`PanPot()`/`BigKnob()` (CW/up = 1); nothing downstream carries a bare
@@ -136,6 +138,6 @@ emulator UI (writes the SVG + re-renders). Regenerate the PNG with
 **never hand-edit `emulator/web/Fox-Tail.png`**. Emulator control state persists
 in the browser's localStorage.
 
-**Open:** see `docs/claude/todo.md` (slider/pot rework, the f0 clamps). Also
-GATE assignment; panel relabeling once the map feels final (labels still show
-delay-era names); optional switch-direction swaps before labels are cut.
+**Open:** see `docs/claude/todo.md` (S&H off the audio inputs, the f0 clamps).
+Also panel relabeling now the map has settled — labels still show delay-era
+names, and switch 2 and GATE have swapped jobs since they were drawn.

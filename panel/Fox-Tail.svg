@@ -1388,7 +1388,7 @@
          sodipodi:role="line"
          id="tspan6445"
          x="358.70541"
-         y="766.55341">GATE</tspan></text>
+         y="766.55341">ODD ONLY</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none"
@@ -1612,7 +1612,7 @@
          sodipodi:role="line"
          id="tspan5659"
          x="560.41376"
-         y="661.39362">ALL</tspan></text>
+         y="661.39362">BRIGHT</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:expanded;font-size:13.3333px;line-height:1.25;font-family:Futura-CondensedMedium;-inkscape-font-specification:'Futura-CondensedMedium, Medium Expanded';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;display:inline;fill:#000000;fill-opacity:1;stroke:none"
@@ -1622,7 +1622,7 @@
          sodipodi:role="line"
          id="tspan5679"
          x="560.73425"
-         y="708.54529">ODD</tspan></text>
+         y="708.54529">DARK</tspan></text>
     <path
        style="display:inline;fill:none;stroke:#000000;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        d="m 560.1334,663.89739 0.0196,6.62889"

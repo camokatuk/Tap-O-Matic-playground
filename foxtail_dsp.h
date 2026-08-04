@@ -19,9 +19,10 @@
 //     retunes only by rebuilding the table and is bursty, which the noise budget
 //     (docs/claude/whinebug.md) forbids.
 //   * Band sliders are breakpoints of a piecewise-linear spectral envelope in
-//     log-frequency over geometric bands spanning the whole bank. Slider 1 is
-//     inharmonicity; pot 1 is fine tune, pots 2-3 are one stereo spread for the
-//     whole bank. Pots 4-9 are unassigned (per-band shape, in design).
+//     log-frequency over geometric bands spanning the whole bank, and above
+//     half their travel they also fill their band in. Slider 1 is
+//     inharmonicity; pot 1 is spectral shift, pot 2 fine tune, pot 3 stereo
+//     spread, pots 4-9 each band's fill order. GATE picks the spectral tilt.
 //   * One shaper, two modes: Cluster and Shepard. Both retune partials inside a
 //     movable window, once per block.
 //   * Constant work per callback: every partial is always rendered, silent ones

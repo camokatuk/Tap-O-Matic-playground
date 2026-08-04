@@ -6,7 +6,7 @@
 // cannot drift from what you are hearing.
 //
 // X = frequency (log). Y = amplitude (dB). Colour = pan (blue left, red right).
-// Shaded band = the shaper window. Dashed lines = the 9 octave-band edges.
+// Shaded band = the shaper window. Dashed lines = the 8 geometric band edges.
 
 (function () {
   const canvas = document.getElementById("partials-canvas");
@@ -86,12 +86,14 @@
       ctx.setLineDash([]);
     }
 
-    // Decade gridlines, then the octave-band edges (partial 1, 2, 4, ... 256).
+    // Decade gridlines, then one marker per slider.
     [100, 1000, 10000].forEach((hz) =>
       gridline(hz, hz >= 1000 ? hz / 1000 + "k" : String(hz), "rgba(255,255,255,0.07)")
     );
-    // Band centres. Bands are geometric over the whole bank, so slider b sits at
-    // ratio N^((b+0.5)/bands) — not at an octave unless bands == log2(N).
+    // Where each slider sits. Bands are geometric over the whole bank, so slider
+    // b is at ratio N^((b+0.5)/bands) — not an octave unless bands == log2(N).
+    // A slider owns the partials from its own marker up to the next one's, so
+    // these are the span boundaries, not centres.
     if (frame.f0 > 0 && frame.bands > 0) {
       for (let b = 0; b < frame.bands; b++) {
         const ratio = Math.pow(frame.nPartials, (b + 0.5) / frame.bands);

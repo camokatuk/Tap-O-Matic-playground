@@ -134,7 +134,7 @@
     // Switches — two state labels each.
     const gsw = group("Switches");
     gsw.append(rowEl("lbl-row lbl-head", span("lbl-key", ""),
-                     span("lbl-col", "state 0"), span("lbl-col", "state 1")));
+                     span("lbl-col", "down (0)"), span("lbl-col", "up (1)")));
     Object.entries(CTRL.switches).forEach(([id, arr]) => {
       if (id.startsWith("_")) return;
       gsw.append(rowEl("lbl-row", span("lbl-key", id), labelInput(arr[0]), labelInput(arr[1])));
