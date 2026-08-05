@@ -176,6 +176,13 @@ across it.
     surviving set lands back on itself: at phi=1 the odd set {1,3..95} sits on
     the EVEN positions {2,4..96}, so it jumps; at phi=2 it sits on {3,5..97},
     itself relabelled. Per block, so free.
+  - **The rate tops out at 1 partial/s** (`kPhiRateMin`, `kPhiRateOct`), i.e. one
+    wrap per second. Set by ear: past roughly half that the illusion stops being
+    one. `k + phi` moves partial 1 a whole octave per wrap and partial 72 by 24
+    cents, so at several wraps a second the ear tracks the individual sweeps
+    instead of the ensemble — reported as "sounds like lasers", which is exactly
+    what an octave zap twice a second is. The first ceiling was 10/s and spent
+    the top fifth of the travel above the usable range.
   - **Phi is a position, not a knob reading** (`AdvancePhi`). The knob sets a
     *rate* in partials/s and the jack contributes its own *change*, folded so a
     step of more than half a wrap reads as a ramp resetting rather than as a
@@ -195,6 +202,41 @@ across it.
     roll is a rotate of `phase_[]` plus an offset into the pan table, once per
     wrap at block rate; the render loop never sees it (it got marginally cheaper,
     since `kSlotPat` moved out of it into `panPartial_`).
+  - ⚠️ **The roll covers only `[moveLo, moveHi]`, the partials the window
+    moves.** Rolling the whole bank also re-phases the STATIC partials, which
+    went nowhere — with the window above the fundamental that is the loudest
+    partial in the bank taking a new phase every wrap, and since the step is the
+    difference between two unrelated accumulators it pops on some cycles and not
+    others. Measured on a window from partial 2: **54x** the median sample step,
+    against 4.5x for a full-range window; restricting the roll brought it to
+    5.7x. No amplitude metric can see this — a phase step moves no gain — so it
+    survived a "0.00 dB swing over a cycle" measurement. Use the first difference
+    of the output when checking a wrap, not levels.
+    - The pan roll is load-bearing and stays global: with the phase roll fixed,
+      removing it puts the same patch back to 17.5x, because the moving partials
+      genuinely need their image to follow the frequency. Static partials do
+      still change pan slot at a wrap; measurably that costs 5.7x against the
+      4.5x floor, which is the residual to attack first if this comes back.
+  - **The window really excludes what it excludes, and the fade follows it.**
+    Two changes that only make sense together. Shepard's window shoulder is
+    exactly one partial (Cluster keeps the `winWidth * 0.1` taper — see todo.md
+    for why the gate exists), and the window start and width snap to whole
+    partials, on a `roll`-partial grid so ODD ONLY lands on odd partials.
+    Together those put every partial's window weight at exactly **0 or 1**: a
+    weight strictly between them is what breaks a windowed wrap, since such a
+    partial moves a fractional step and lands nowhere. The ends fade then keys to
+    `[max(winStart,1), min(winEnd, kEndFade)]` instead of the bank, so the moving
+    region maps onto itself wherever it sits. Wide open, those two values *are*
+    1 and 97, so the flagship patch is unchanged.
+    - Measured, window from partial 5: the whole-bank swing over a cycle goes
+      from 0.87 dB (fade keyed to the bank — a hole opening at the window's own
+      bottom edge once per cycle) to **0.00 dB**, with the low end 3.9 dB louder
+      because partials 1–4 are now static at full level instead of dragged
+      partway into the glide. Before, the shoulder reached ~10 partials below a
+      wide window's start, so no window position gave back a clean fundamental.
+    - The cost is a spectral notch: the lowest moving partial is silent by
+      construction, so there is a `kEndFadeW`-wide dip between the static bottom
+      and the glide. It is static in time — a gap, not a loop.
   - It is *not* a Risset glide: `k + phi` moves partial 1 by an octave and
     partial 72 by 24 cents. What earns the name is the wrap, not uniform motion.
     A canonical Shepard is octave-spaced with no fundamental to fuse on; this is
@@ -262,12 +304,14 @@ an ordinary two- or three-band patch sits 6–9 dB below the case being protecte
 option, but it means accepting that the all-up patch engages the soft clip,
 which changes what `clip_guard` asserts.
 
-Measured worst case over 37,050 patches: **peak 0.738 against the 0.85 knee**,
-at `cluster BRIGHT f0=55 A=0.12 B=0.88 pos=0.00 win=0.75`. Up from 0.613 when
+Measured worst case over 37,050 patches: **peak 0.700 against the 0.85 knee**,
+at `cluster SPREAD f0=55 A=0.12 B=0.88 pos=0.50 win=0.75`. Up from 0.613 when
 knob 4 was unipolar: A=0.12 is now a large cluster collapsing UP, which the old
 map could not reach, and it is the hottest corner the panel has. Still inside
-`kHeadroom`'s stated worst case (~0.75), but the margin is 1.2 dB — check this
-number, not just pass/fail, if the collapse geometry changes again.
+`kHeadroom`'s stated worst case (~0.75), but the margin is 1.7 dB — check this
+number, not just pass/fail, if the collapse geometry changes again. Giving
+Cluster Shepard's one-partial window shoulder sent it to **1.168**, past the hard
+cap; that is the todo.md compensation bug, not the shoulder.
 
 Which tilt is loudest depends on the compensation, so check rather than assume:
 uncompensated, dark is far worse (2.005 vs bright's 1.208), but once the Cluster

@@ -42,7 +42,37 @@ That is a code reading, not a test. Worth actually trying `kF0Min = 0.01f` and
 listening: a 96-partial bank at LFO rates is potentially a good drone/texture
 mode, but nothing has been verified by ear.
 
-## 4. Shepard band-boundary tick — known, mitigated, watch it
+## 4. Cluster's gain compensation scales partials the window never moved
+
+`norm` in `UpdateBlock` is folded into the per-band gains, so it reaches **every**
+partial — including the ones outside the shaper window, which never collapsed and
+have nothing to compensate for.
+
+Measured (old engine, window from partial 5, 9 wide, max cluster): partial 1 sits
+outside the window and still loses **4.4 dB** when the density knob sweeps
+0 → 1. It has always erred quiet, which is why no guard caught it.
+
+It stops being harmless with the collapse-UP direction, where the compensation
+*boosts*: a wide window clearing the fundamental boosted that static fundamental
+by the collapse's full 5.5x, one partial reaching peak 1.17 against the 0.85
+knee. Only reachable today with the one-partial window shoulder, which is why
+that shoulder is gated to Shepard — the gate is a workaround for this, not a
+design preference.
+
+The fix that was tried and reverted: weight the boost by the share of the bank's
+POWER inside the window, `boostW = 1 + winPow*(boost - 1)`, with `winPow` from
+integrals of `r^-2a` over the window, morphed with the tilt like the boosts
+themselves. It is exact at `winPow = 1` (window wide open — the case the
+compensation was built for, so the headline patches are untouched), and it cut
+that 4.4 dB error to 0.9 dB. It was reverted because it makes Cluster **louder**
+whenever the window is partial, and Cluster's levels were tuned by ear against
+the current behaviour.
+
+Before landing it: run the clip sweep, and A/B a partial-window Cluster patch on
+hardware. The model holds total POWER flat; the guard measures PEAK, and those
+part company exactly when a cluster piles onto one frequency.
+
+## 5. Shepard band-boundary tick — known, mitigated, watch it
 
 In Shepard a partial crossing a band boundary stepped in level, which ticked
 once per crossing. Mitigated by the Shepard-only crossfade (`kXfadeW`). If it

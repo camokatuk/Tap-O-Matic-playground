@@ -350,6 +350,8 @@ class FoxTailOsc
         paritySmooth_ = 0.f;
         sh_           = Shaper();
         sh_.shapeA    = 0.5f; // knob 4's neutral is the centre, not zero
+        sh_.winStart  = 1.f;  // partial 1; a zero here would put the window off the bank
+        sh_.winWidth  = 1.f;
         winStart_     = 1.f;
         winEnd_        = 1.f;
 
@@ -528,7 +530,10 @@ class FoxTailOsc
     // cycle and the glide read as a loop. Taste constant: 1 restores the old
     // hard bottom, larger hollows the low end further.
     static constexpr float kEndFadeW   = 4.f;
-    static constexpr float kEndFadeInv = 1.f / kEndFadeW;
+
+    // Window shoulder, in partials: Shepard's width, and the floor under
+    // Cluster's proportional one.
+    static constexpr float kWinEdge = 1.f;
 
     // Knob 4's dead centre, shared by both modes so the panel means one thing:
     // neutral at noon, and the side you turn to picks the direction. It lives
@@ -541,8 +546,16 @@ class FoxTailOsc
     // Partials per second, so ODD ONLY — which must travel two partials to land
     // back on itself — glides at the same apparent speed and takes twice as long
     // to wrap.
-    static constexpr float kPhiRateMin  = 0.01f;   // partials/s at the deadzone edge
-    static constexpr float kPhiRateOct  = 9.9658f; // log2(10 / kPhiRateMin)
+    //
+    // Ceiling is 1 partial/s. Above roughly half that the illusion stops being
+    // one: partial 1 travels a whole octave per wrap while the top of the bank
+    // moves 24 cents, so at several wraps a second the ear tracks the individual
+    // sweeps instead of the ensemble and it reads as a repeating zap. The old
+    // 10/s ceiling spent the top fifth of the travel there.
+    //static constexpr float kPhiRateMin  = 0.005f; // partials/s at the deadzone edge
+     static constexpr float kPhiRateMin  = 0.01f;   // partials/s at the deadzone edge
+    //static constexpr float kPhiRateOct  = 7.6439f; // log2(1 / kPhiRateMin)
+     static constexpr float kPhiRateOct  = 9.9658f; // log2(10 / kPhiRateMin)
 
     // Jack motion is folded into [-kPhiWrapFold, 1 - kPhiWrapFold) travel per
     // block, so anything past half a wrap reads as a ramp resetting rather than
@@ -624,26 +637,34 @@ class FoxTailOsc
     }
 
     // A wrap hands every frequency to the partial n above it. The AMPLITUDE at
-    // each frequency is already continuous there (the kEndFade fade is what buys
-    // that), but phase and pan slot belong to the partial rather than to the
-    // frequency, so they have to travel with it or all 96 step at once — a click
-    // whose size does not depend on how carefully phi was aimed. Once per wrap,
-    // at block rate; the render loop never sees it.
-    void RollPartials(int n)
+    // each frequency is already continuous there (the fade is what buys that),
+    // but phase and pan slot belong to the partial rather than to the frequency,
+    // so they have to travel with it or all 96 step at once — a click whose size
+    // does not depend on how carefully phi was aimed. Once per wrap, at block
+    // rate; the render loop never sees it.
+    //
+    // [lo, hi] is the range the window actually MOVES. Rolling the whole bank
+    // rolled the static partials too, which is a phase step in a partial that
+    // never went anywhere — with the window above the fundamental, that is the
+    // loudest partial in the bank taking a new phase every wrap. The step is the
+    // difference between two unrelated accumulators, so it popped on some cycles
+    // and not others. Measured 54x the median sample step; 15x without it.
+    void RollPartials(int n, int lo, int hi)
     {
         const int m = n > 0 ? n : -n;
-        uint32_t  tmp[2];
+        if (hi - lo < m) return; // nothing to roll into
+        uint32_t tmp[2];
         if (n > 0)
         {
-            for (int i = 0; i < m; ++i) tmp[i] = phase_[kNumPartials - m + i];
-            for (int j = kNumPartials - 1; j >= m; --j) phase_[j] = phase_[j - m];
-            for (int i = 0; i < m; ++i) phase_[i] = tmp[i];
+            for (int i = 0; i < m; ++i) tmp[i] = phase_[hi - m + 1 + i];
+            for (int j = hi; j >= lo + m; --j) phase_[j] = phase_[j - m];
+            for (int i = 0; i < m; ++i) phase_[lo + i] = tmp[i];
         }
         else
         {
-            for (int i = 0; i < m; ++i) tmp[i] = phase_[i];
-            for (int j = 0; j + m < kNumPartials; ++j) phase_[j] = phase_[j + m];
-            for (int i = 0; i < m; ++i) phase_[kNumPartials - m + i] = tmp[i];
+            for (int i = 0; i < m; ++i) tmp[i] = phase_[lo + i];
+            for (int j = lo; j + m <= hi; ++j) phase_[j] = phase_[j + m];
+            for (int i = 0; i < m; ++i) phase_[hi - m + 1 + i] = tmp[i];
         }
         phiRot_ = (phiRot_ + n + kSlots) & (kSlots - 1);
     }
@@ -654,7 +675,7 @@ class FoxTailOsc
     // ramp seamless — its reset stops being a step, so the smoother cannot slew
     // it into a downward glissando, and the ramp no longer has to span exactly
     // one partial for the wrap to land where the spectrum repeats.
-    float AdvancePhi(float cv, float rate, float range, float k)
+    float AdvancePhi(float cv, float rate, float range, int roll, int lo, int hi, float k)
     {
         float d = cv - phiCv_;
         phiCv_  = cv;
@@ -665,18 +686,15 @@ class FoxTailOsc
         phiVel_ += (d * range - phiVel_) * k;
         phiPos_ += phiVel_ + rate * blockSec_;
 
-        // Two partials per wrap under ODD ONLY, where only that shift maps the
-        // surviving set onto itself.
-        const int n = paritySmooth_ > 0.5f ? 2 : 1;
         while (phiPos_ >= range)
         {
             phiPos_ -= range;
-            RollPartials(n);
+            RollPartials(roll, lo, hi);
         }
         while (phiPos_ < 0.f)
         {
             phiPos_ += range;
-            RollPartials(-n);
+            RollPartials(-roll, lo, hi);
         }
         return phiPos_;
     }
@@ -720,18 +738,61 @@ class FoxTailOsc
         const float hzToInc = 4294967296.f / sampleRate_; // 2^32 / sr
         const float nyqFade = 1.f / (kNyqFadeFrac * nyquist_);
 
+        // Smoothed here rather than after the band loop because phi and the
+        // window snap below both need it.
+        paritySmooth_ += (Clamp01(c.parity) - paritySmooth_) * smoothCoefBlk_;
+
+        // How many partials a wrap moves the bank: 2 under ODD ONLY, which is
+        // the only shift that maps the surviving set onto itself.
+        const int   roll  = paritySmooth_ > 0.5f ? 2 : 1;
+        const float rollF = (float)roll;
+
         // Window, in partial-index space, exponential so the low partials (where
         // the ear cares) get most of the knob travel.
-        const float nf       = (float)kNumPartials;
-        const float logN     = FastLog2(nf);
-        const float winStart = std::exp2(position * logN);
-        const float winWidth = std::exp2(window * logN);
+        //
+        // Shepard snaps it to whole partials and then smooths the snap. With the
+        // shoulders one partial wide (below), that puts every partial's window
+        // weight at exactly 0 or 1 — and a weight strictly between them is what
+        // breaks the wrap: such a partial moves a fractional step, so at the wrap
+        // it lands nowhere and jumps back. It is also what makes "exclude the
+        // fundamental" a repeatable gesture instead of a hunt. The grid is `roll`
+        // partials, not one: under ODD ONLY a window starting on an even partial
+        // puts the lowest SURVIVING partial one above the fade's zero, and that
+        // one is not silent. Smoothing after the snap turns each step into a 5 ms
+        // glide; smoothing before it (in `position`) is what keeps ADC noise from
+        // flickering the snap across a boundary.
+        const float nf   = (float)kNumPartials;
+        const float logN = FastLog2(nf);
+        float       winS = std::exp2(position * logN);
+        float       winW = std::exp2(window * logN);
+        if (shepard)
+        {
+            winS = 1.f + rollF * std::floor((winS - 1.f) / rollF + 0.5f);
+            winW = rollF * std::fmaxf(std::floor(winW / rollF + 0.5f), 1.f);
+        }
+        const float winStart = Smooth(sh_.winStart, winS, k);
+        const float winWidth = Smooth(sh_.winWidth, winW, k);
         const float winEnd   = winStart + winWidth;
         winStart_ = winStart; // published for the emulator's partial viewer
         winEnd_   = winEnd;
 
-        // Smoothed here rather than after the band loop because phi needs it.
-        paritySmooth_ += (Clamp01(c.parity) - paritySmooth_) * smoothCoefBlk_;
+        // The partials the window fully moves, as indices: what a wrap may roll.
+        int moveLo = (int)(winStart - 0.5f);
+        int moveHi = (int)(winEnd - 0.5f);
+        if (moveLo < 0) moveLo = 0;
+        if (moveHi > kNumPartials - 1) moveHi = kNumPartials - 1;
+
+        // Shepard's ends fade, keyed to the WINDOW rather than to the bank. The
+        // moving region is [winStart, winEnd] and the wrap is exact when the
+        // ensemble maps onto itself, which needs whichever partial sits at each
+        // end of that region to be silent — wherever the window happens to be.
+        // Keyed to the bank, a window that started above the fundamental left a
+        // hole at its own bottom edge once per cycle. Clamped to the bank too,
+        // since a window may run off the top of it. The two fades cannot meet:
+        // winWidth >= 1 keeps their gap >= 1, so the width below is >= 0.5.
+        const float fadeLo  = std::fmaxf(winStart, 1.f);
+        const float fadeHi  = std::fminf(winEnd, kEndFade);
+        const float fadeInv = 1.f / std::fminf(kEndFadeW, (fadeHi - fadeLo) * 0.5f);
 
         // Mode params.
         //
@@ -743,7 +804,7 @@ class FoxTailOsc
         const float shapeAT  = Detent(shapeA);
         float       phi      = 0.f;
         if (shepard)
-            phi = AdvancePhi(c.shapeACv, PhiRate(shapeAT), phiRange, k);
+            phi = AdvancePhi(c.shapeACv, PhiRate(shapeAT), phiRange, roll, moveLo, moveHi, k);
         else
             phiCv_ = c.shapeACv; // primed, so entering Shepard is not a jump
         // Shepard's knob 5 ducks the windowed partials, INVERTED so the knob at
@@ -950,10 +1011,25 @@ class FoxTailOsc
         // crossing it jumps frequency instantly, so sweeping SPREAD or FEEDBACK
         // drags partials across one after another and you hear a burst of clicks
         // — the "scratchy knob". The taper blends each partial's shift in and out
-        // instead, at the cost of one multiply. It sits OUTSIDE the window: a
-        // partial at winStart is already fully shifted. Inside, a full-width
-        // window left the top ~9 partials stranded near Nyquist.
-        const float edge    = winWidth * 0.1f > 1.f ? winWidth * 0.1f : 1.f;
+        // instead. It sits OUTSIDE the window: a partial at winStart is already
+        // fully shifted. Inside, a full-width window left the top ~9 partials
+        // stranded near Nyquist.
+        //
+        // Shepard narrows it to exactly one partial. One spacing is all the
+        // anti-click needs, and proportional to the WIDTH it reached ~10 partials
+        // below a wide window's start: no window position gave back a static,
+        // full-level fundamental, because the fundamental was always partway into
+        // the glide — ducked and tens of cents sharp. It also has to be one for
+        // the snap above to land every window weight on 0 or 1.
+        //
+        // Cluster keeps the proportional taper. Not because it would not benefit
+        // from a predictable edge, but because it was tuned by ear against this
+        // one: a sharp edge puts every low partial fully into the collapse, and
+        // the gain compensation (which reaches partials the window never moved)
+        // then over-boosts them past the clip. That is a real, pre-existing bug —
+        // see todo.md — and fixing it is its own decision, not this one's.
+        const float edge    = shepard ? kWinEdge
+                                      : std::fmaxf(winWidth * 0.1f, kWinEdge);
         const float invEdge = 1.f / edge;
         const float loEdge  = winStart - edge;
         const float hiEdge  = winEnd + edge;
@@ -988,18 +1064,17 @@ class FoxTailOsc
             // body). std::sqrt is safe ONLY because the build sets
             // -fno-math-errno: that makes it a bare VSQRT, exact at B = 0.
             ratio *= std::sqrt(1.f + inharmB * ratio * ratio);
-            // Shepard's ends. The bank is finite, so a shift by one index leaves
-            // nothing at the bottom and adds one at the top: the fundamental
-            // simply vanishes as phi rises. Fading the ends to silence makes the
-            // wrap exact instead of nearly exact — the amplitude at a given ratio
-            // is the same before and after, so the ensemble is. kEndFadeW
-            // partials wide rather than one: the fade IS the low end's envelope,
-            // and against the tilt a one-partial fade meant the loudest partial
-            // in the bank arrived from nothing every cycle. Scaled by w so
-            // partials outside the window, which never moved, are not faded for
-            // standing still.
-            const float ends  = Clamp01(kEndFadeInv
-                                        * std::fminf(ratio - 1.f, kEndFade - ratio));
+            // Shepard's ends. The moving region is finite, so a shift by one
+            // index leaves nothing at its bottom and adds one past its top.
+            // Fading its ends to silence makes the wrap exact instead of nearly
+            // exact — the amplitude at a given ratio is the same before and
+            // after, so the ensemble is. kEndFadeW partials wide rather than one:
+            // the fade IS the region's low envelope, and against the tilt a
+            // one-partial fade meant the loudest partial in the bank arrived from
+            // nothing every cycle. Scaled by w so partials outside the window,
+            // which never moved, are not faded for standing still.
+            const float ends  = Clamp01(fadeInv
+                                        * std::fminf(ratio - fadeLo, fadeHi - ratio));
             const float wGain = shepard ? 1.f + w * (winGain * ends - 1.f) : 1.f;
 
             const float freq = ratio * f0;
@@ -1123,6 +1198,9 @@ class FoxTailOsc
     struct Shaper
     {
         float position, window, shapeA, shapeB, inharm, spread, bandShift;
+        // Downstream of position/window: Shepard snaps these to whole partials,
+        // and a snap has to be smoothed on the far side of itself.
+        float winStart, winWidth;
     };
     Shaper sh_;
 
