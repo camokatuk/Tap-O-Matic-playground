@@ -100,15 +100,20 @@ struct Witness
 // patches that slam the clip on the uncompensated engine.
 // rawPeak re-measured after the tilt change (the sawtooth slope is ~5 dB
 // quieter than equal-power-per-octave, so every one of these moved down).
-// A=0.88 now beats A=1.00 as the worst case; it replaces the old pos=0.2
+// A=0.95 now beats A=1.00 as the worst case; it replaces the old pos=0.2
 // witness, which fell to 0.43 and had stopped proving anything.
+// A is in KNOB travel, and knob 4 became centre-neutral: 0.5 is m=1, and the
+// old A=0.88/0.75 spectra now sit at 0.95/0.89. Values below 0.5 are the same
+// cluster sizes collapsing onto the cluster's top instead, which lands the pile
+// where both tilts are quieter — the grid sweep covers that side, but it does
+// not clip, so it earns no witness.
 const Witness kWitnesses[] = {
-    {"spread  A=0.88 B=1.00 win=1.0 pos=0.0", 1, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.230f},
-    {"centred A=0.88 B=1.00 win=1.0 pos=0.0", 0, 0.88f, 1.00f, 0.f, 1.f, 220.f, 2.212f},
+    {"spread  A=0.95 B=1.00 win=1.0 pos=0.0", 1, 0.95f, 1.00f, 0.f, 1.f, 220.f, 2.230f},
+    {"centred A=0.95 B=1.00 win=1.0 pos=0.0", 0, 0.95f, 1.00f, 0.f, 1.f, 220.f, 2.212f},
     {"centred A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.925f},
     {"spread  A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.892f},
     {"spread  A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 2.510f},
-    {"centred A=0.75 B=1.00 win=0.8 pos=0.0", 0, 0.75f, 1.00f, 0.f, 0.8f, 220.f, 1.629f},
+    {"centred A=0.89 B=1.00 win=0.8 pos=0.0", 0, 0.89f, 1.00f, 0.f, 0.8f, 220.f, 1.629f},
     // Bright tilt. Lower than dark UNCOMPENSATED, but once the Cluster
     // compensation was re-derived per tilt the compensated worst case moved to
     // bright -- so this is not decoration, it is the loud side now.
@@ -307,8 +312,8 @@ int main()
     std::snprintf(buf, sizeof buf, "density sweep holds level within %.1f dB", spreadDb);
     Check(spreadDb < 3.f, buf);
 
-    // --- 3b. Cluster knob at 0 must be a true bypass --------------------------
-    // At shapeA = 0 every cluster is one partial and nothing shifts, so the
+    // --- 3b. Cluster knob at centre must be a true bypass ---------------------
+    // In the deadzone every cluster is one partial and nothing shifts, so the
     // density knob must have NO effect — same peak at density 0 and 1. The
     // first compensation formula failed this (span m instead of m-1: a phantom
     // -1.6 dB cut at density 1, jittering on knob noise).
@@ -318,7 +323,7 @@ int main()
         c.mode    = foxtail::kModeCluster;
         c.pitchHz = 220.f;
         c.window  = 1.f;
-        c.shapeA  = 0.f;
+        c.shapeA  = 0.5f;
         c.shapeB  = 0.f;
         const Meas m0 = Run(osc, c);
         c.shapeB      = 1.f;

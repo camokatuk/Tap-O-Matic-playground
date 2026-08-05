@@ -73,7 +73,11 @@ sliders 2–9 = gain of 8 geometric bands *and*, above half travel, how far each
 band fills in; pots 4–9 = each band's fill order (CCW highpass → CW lowpass);
 GATE = spectral tilt (low = sawtooth slope, high = equal power per octave); knob 1 = pitch (jack is calibrated V/oct); knobs 2–5 = shaper
 (window start/width, then per-mode params); switch 1 down = CLUSTER / up =
-SHEPARD; switch 2 up = BRIGHT tilt / down = DARK.
+SHEPARD; switch 2 up = BRIGHT tilt / down = DARK. **Knob 4 is centre-neutral in
+both modes** (software deadzone — a stock build has no detent): Shepard's side
+picks glissando direction, Cluster's picks which end of a cluster collapses. Its
+CV jack is the one control whose knob and jack are *not* summed at the hardware
+seam — Shepard needs them apart, so the engine gets both (`shapeA`/`shapeACv`).
 Measured quirks: switch 1 reads HIGH down, switch 2 HIGH up. Every
 pot, slider and knob reads full 0..1 travel on a linear taper — assume the
 controls are good. Panel readings are normalized once in

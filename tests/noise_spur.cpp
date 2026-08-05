@@ -83,7 +83,7 @@ void Run(const Scenario& sc)
     // Realistic parked-knob offsets: hardware pots do not read exactly 0/1.
     base.position = 0.02f;
     base.window   = 0.98f;
-    base.shapeA   = 0.02f;
+    base.shapeA   = 0.52f; // knob 4 is centre-neutral in both modes
     base.shapeB   = 0.03f;
     base.master   = 0.7f;
 

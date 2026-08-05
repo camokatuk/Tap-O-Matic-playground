@@ -226,15 +226,19 @@ void audioCallback(ma_device* /*device*/, void* pOutput, const void* /*pInput*/,
         for (int b = kFirstShapeBand; b < foxtail::kNumBands; ++b)
             c.bandShape[b] = pot01(b + 1); // pots 4..9
 
-        // The four shaper knobs, each summed with its analog CV jack.
-        float k[kNumShaperKnobs];
+        // The four shaper knobs, each summed with its analog CV jack — except
+        // knob 4, which hands the engine both parts (the modes combine them
+        // differently). Every source still runs exactly once per block.
+        float k[kNumShaperKnobs], cv[kNumShaperKnobs];
         for (int i = 0; i < kNumShaperKnobs; ++i) {
-            float v = g_knob[i].load(std::memory_order_relaxed) + g_srcKnob[i].run(dt);
+            cv[i]   = g_srcKnob[i].run(dt);
+            float v = g_knob[i].load(std::memory_order_relaxed) + cv[i];
             k[i] = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
         }
         c.position = k[kKnob2];
         c.window   = k[kKnob3];
-        c.shapeA   = k[kKnob4];
+        c.shapeA   = g_knob[kKnob4].load(std::memory_order_relaxed);
+        c.shapeACv = cv[kKnob4];
         c.shapeB   = k[kKnob5];
 
         c.mode        = g_mode.load(std::memory_order_relaxed);

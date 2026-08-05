@@ -20,7 +20,7 @@ hardware-verified unless marked open.
 | Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
 | Knob 2 (was SPREAD) | shaper window start | yes |
 | Knob 3 (was FEEDBACK) | shaper window width | yes |
-| Knob 4 (was HPF) | cluster: partials per cluster (soft-step) / shepard: phi | yes |
+| Knob 4 (was HPF) | **centre-neutral, both modes.** cluster: partials per cluster, CW collapsing onto the cluster's low end and CCW onto its high end / shepard: glissando rate, CW rising | yes, but see below |
 | Knob 5 (was LPF) | cluster: density / shepard: window duck (CCW = unity) | yes |
 | Switch 1 (left) | down = CLUSTER, up = SHEPARD | — |
 | Switch 2 (right) | spectral tilt: up = BRIGHT (1/√r), down = DARK (1/r) | — |
@@ -125,8 +125,17 @@ screenless panel survive the mode switch. Window edges are tapered (smoothstep
 over 10% of width): a hard edge clicks as sweeping knob 2/3 drags partials
 across it.
 
-- **Cluster** — `r_k = k·(1−density) + density·s_c` (s_c = start of k's
+- **Cluster** — `r_k = k·(1−density) + density·s_c` (s_c = the target inside k's
   cluster). Density is capped at 0.995; 0.9–1 is the useful beating zone.
+  Knob 4 is bipolar about a dead centre where m = 1 and nothing shifts, matching
+  Shepard so the panel means one thing: the **side** picks which end of a cluster
+  its members land on. CW is the cluster's low end, a comb at multiples of m; CCW
+  is its high end — the same comb offset by m−1, so it is no longer aligned to f0
+  and rings instead of thickening. The offset is clamped to the window, so a
+  single cluster wider than the window piles at the window's top edge instead of
+  being shoved past Nyquist. Both anchors are one per-block add folded into the
+  base the partial loop already sums, so the second direction costs the loop
+  nothing.
   Partials-per-cluster soft-steps up to `2^(log2 N + 0.5)`, so the knob can reach
   a *single* cluster — at the old ceiling of 64 a second cluster start was
   stranded high in the spectrum and could not be removed. The window taper sits
@@ -147,22 +156,52 @@ across it.
 - **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
   at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
   the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
-  all sliders up + a ramp LFO into knob 4's CV jack = a Shepard tone as a patch
+  all sliders up = a Shepard tone, driven by the knob or by a ramp into its jack
   (`patch-book.md`). Narrow window = spectral shear on a slice. Knob 5 ducks the
   window contents, inverted so knob-at-rest = unity (a plain gain muted the whole
   window at rest, exactly where Cluster's density = 0 is neutral).
   - The bank is **finite**, so a shift by one index leaves nothing at the bottom
     and adds one past the top: the fundamental simply vanished as phi rose. The
-    outermost partials fade to silence by ratio (`kEndFade`), which makes the
-    wrap exact rather than nearly — at phi=0 the sound is {2..96} plus a silent
-    1, at full phi {2..96} plus a silent 97. One partial wide, so only two are
-    ever touched and each fades across a whole sweep.
+    ends fade to silence by ratio (`kEndFade`), which is what makes the wrap
+    exact rather than nearly: amplitude is a function of ratio alone, so the
+    ensemble either side of a wrap is the same sound.
+  - **The fade is `kEndFadeW` = 4 partials wide, not 1.** Any width keeps the
+    wrap exact; the width is the low end's envelope. At 1, the newest partial
+    was also the loudest in the bank under either tilt, so it swelled in from
+    nothing once per cycle and the glide read as a *loop* rather than an endless
+    rise. At 4 the cyclic swing of the low end drops from 0.91 dB to 0.09 dB and
+    of the whole bank from 0.34 dB to 0.03 dB, at the price of ~8 dB of low end.
+    A taste constant: 1 restores the old hard bottom.
   - **Phi's range doubles under ODD ONLY.** The wrap only closes when the
     surviving set lands back on itself: at phi=1 the odd set {1,3..95} sits on
     the EVEN positions {2,4..96}, so it jumps; at phi=2 it sits on {3,5..97},
     itself relabelled. Per block, so free.
+  - **Phi is a position, not a knob reading** (`AdvancePhi`). The knob sets a
+    *rate* in partials/s and the jack contributes its own *change*, folded so a
+    step of more than half a wrap reads as a ramp resetting rather than as a
+    sweep. Three things follow. An external ramp's reset is no longer a step, so
+    the 5 ms shaper smoother cannot slew it into a downward glissando. The ramp
+    no longer has to span exactly one partial: the fold makes up the difference,
+    so the wrap always lands where the spectrum repeats. And there is no cable
+    detection anywhere — an unpatched jack on this board is *grounded* through
+    the Thonkiconn's own switch contact (verified in the PCB: pad 2 to GND, no
+    GPIO), so "no cable" and "a source resting at 0 V" are the same reading and
+    an envelope at rest is exactly the second one. Additive is the only honest
+    combination.
+  - **A wrap rolls the bank** (`RollPartials`). Amplitude per frequency is
+    already continuous across a wrap, but phase and pan slot belong to the
+    *partial*, not the frequency, so without the roll all 96 stepped phase at
+    once — a click whose size did not depend on how carefully phi was aimed. The
+    roll is a rotate of `phase_[]` plus an offset into the pan table, once per
+    wrap at block rate; the render loop never sees it (it got marginally cheaper,
+    since `kSlotPat` moved out of it into `panPartial_`).
   - It is *not* a Risset glide: `k + phi` moves partial 1 by an octave and
     partial 72 by 24 cents. What earns the name is the wrap, not uniform motion.
+    A canonical Shepard is octave-spaced with no fundamental to fuse on; this is
+    a harmonic bank whose fused pitch stays put while the partials slide through
+    a fixed envelope. Pulling the low bands down is what moves it toward the
+    classic percept — and in Shepard the envelope is frequency-indexed, so the
+    sliders behave exactly like the Shepard bell they are standing in for.
 
 **Random phase is unconditional**, not a switch: phases are seeded randomly at
 init for crest factor (measured 2.8 vs 6.8 aligned — aligned clips at full
@@ -223,8 +262,12 @@ an ordinary two- or three-band patch sits 6–9 dB below the case being protecte
 option, but it means accepting that the all-up patch engages the soft clip,
 which changes what `clip_guard` asserts.
 
-Measured worst case over 37,050 patches: **peak 0.613 against the 0.85 knee**,
-at `cluster BRIGHT f0=220 A=0.12 B=0.88 pos=0.50 win=0.75`.
+Measured worst case over 37,050 patches: **peak 0.738 against the 0.85 knee**,
+at `cluster BRIGHT f0=55 A=0.12 B=0.88 pos=0.00 win=0.75`. Up from 0.613 when
+knob 4 was unipolar: A=0.12 is now a large cluster collapsing UP, which the old
+map could not reach, and it is the hottest corner the panel has. Still inside
+`kHeadroom`'s stated worst case (~0.75), but the margin is 1.2 dB — check this
+number, not just pass/fail, if the collapse geometry changes again.
 
 Which tilt is loudest depends on the compensation, so check rather than assume:
 uncompensated, dark is far worse (2.005 vs bright's 1.208), but once the Cluster
@@ -241,6 +284,20 @@ the density/partials/window geometry ALONE — never from engine amp state, whic
 is the structure that made two earlier attempts throw hardware-only ~8 kHz
 artifacts (`archives.md`; do not build a gain that feeds amp state back into
 `master`). RMS holds flat within 0.9 dB across the density knob.
+
+Both closed forms are really over the interval the members end up occupying,
+`[a, a+y]` in units of the window start. Collapsing down leaves `a = 1`;
+collapsing up slides the same interval to the cluster's top, `a = 1+x−y`, where
+either tilt makes it quieter — miss that and the up side over-boosts by up to
+`(1+x)`. Both reduce to the plain forms at `a = 1`, and to 1 at density 0 where
+`y = x` and nothing has moved. Measured across the density knob: worst 2.4 dB
+collapsing down, 2.1 dB up, exactly 0.00 dB at the centre detent.
+
+⚠️ **Measure high density over seconds, not milliseconds.** A collapsed
+cluster's members sit `(1−d)·f0` apart and beat with a multi-second period, so a
+quarter-second RMS window reports whatever phase it happened to catch — it made
+the up side look 8 dB worse than it is. `clip_guard` has an 8 s corner for this
+reason; any new harness needs the same.
 
 ⚠️ **The compensation's closed form depends on the tilt exponent.** Integrating
 `r^-2a` across a collapsed cluster gives `ln(1+t)/t` at `a = ½` but `1/(1+t)` at

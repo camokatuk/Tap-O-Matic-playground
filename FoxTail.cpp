@@ -469,7 +469,11 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
 
     controls.position = knobPlusCv(1);
     controls.window   = knobPlusCv(2);
-    controls.shapeA   = knobPlusCv(3);
+    // Knob 4 hands its jack over whole: Cluster sums them in the engine as
+    // knobPlusCv would, Shepard drives its glissando from the knob and reads phi
+    // from the jack, which must not be clamped against the knob's own offset.
+    controls.shapeA   = clampf(BigKnob(3), 0.0f, 1.0f);
+    controls.shapeACv = KnobCv(3);
     controls.shapeB   = knobPlusCv(4);
 
     // Measured polarity: switch 1 reads HIGH when down, switch 2 HIGH when up.
@@ -644,9 +648,10 @@ int main(void)
             //            mode (Cluster) and keep real headroom: overload starves
             //            the ADC, USB and LEDs, not just the audio.
             // A second line alternates with it (one line would truncate),
-            // printing the control seam as the engine receives it. pos/win/A/B
+            // printing the control seam as the engine receives it. pos/win/B
             // are knob PLUS CV jack — A/B against the emulator with these
-            // numbers, not with physical knob angles.
+            // numbers, not with physical knob angles. A is the knob ALONE; its
+            // jack does a different job per mode, and reads out on line 2.
             static int logAlt = 0;
             logAlt = (logAlt + 1) % 3;
             if (logAlt == 1)
