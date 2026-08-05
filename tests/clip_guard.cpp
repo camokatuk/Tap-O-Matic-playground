@@ -341,12 +341,16 @@ int main()
         c.shapeA  = 1.f;
         c.shapeB  = 0.f;
         const Meas m = Run(osc, c);
-        // 0.2434 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
+        // 0.2708 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
         // compensation is boost=1 and only FastRSqrt(1) = 0.9983 remains.
         // Re-measure whenever kHeadroom, the pan layout or the tilt changes --
         // all three move it, and it scales linearly with kHeadroom.
-        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.2434)", m.peak);
-        Check(std::fabs(m.peak - 0.2434f * 0.9983f) < 0.005f, buf);
+        // 0.2434 when cfg 1 was SCATTER. ORBIT is no wider (radius 0.8, no hard
+        // pan) but a sine dwells near its extremes, so evenly spaced phases give
+        // a clustered set of positions rather than the fan's even one, and
+        // partials sharing a position sum coherently.
+        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.2708)", m.peak);
+        Check(std::fabs(m.peak - 0.2708f * 0.9983f) < 0.005f, buf);
     }
     {
         foxtail::Controls c;

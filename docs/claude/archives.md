@@ -157,3 +157,24 @@ fixed control count and lost.
   cf. Pigments' Modal Warp "Range") — at high settings only quiet or ultrasonic
   partials bent, so the control read as dead. The k² law already protects the
   low end. That pot became fine tune.
+
+## Pan anchors: PING-PONG and SUPER-WIDE — built and cut
+
+The first anchor set ran MONO → SCATTER → PING-PONG → SUPER-WIDE. PING-PONG put
+every partial hard L or hard R; SUPER-WIDE pushed positions past ±1 so the far
+channel's gain went negative. Both were cut on listening — the whole upper half
+of pot 3 was disliked. ORBIT replaced them.
+
+- **Anti-phase needs machinery**: a `SignedSqrt` (plain `std::sqrt` cannot take
+  the negative branch) plus a per-block rescale, because past hard pan the *near*
+  channel's `sqrt(p)` exceeds 1, which is the ceiling `kHeadroom` was sized
+  against. With the rescale it cost nothing — 0.7 dB quieter overall, no step.
+- **Neither ever cost global headroom, and `kHeadroom` was never touched.** Worth
+  recording because it was misread at the time: mono and scatter rendered
+  bit-identically before and after, and the exhaustive sweep's worst case stayed
+  at 0.613 against the 0.85 knee — on a `cfg2` patch at `spread = 0`, i.e. mono.
+  The binding patch for the clip contract is not a panned one.
+- What did move was one hard-panned *witness* peak: 0.243 → 0.288 for PING-PONG,
+  → 0.335 for SUPER-WIDE. That is hard panning, not anti-phase — one channel
+  carrying half the bank at full gain instead of all of it at 0.707. It is why
+  the current anchors stay inside ±1 and `tests/slot_table.cpp` asserts it.

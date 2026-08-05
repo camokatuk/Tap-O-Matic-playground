@@ -15,7 +15,7 @@ hardware-verified unless marked open.
 | Pot 1 | spectral shift: slides envelope + comb ±1 octave along the series | — |
 | Sliders 2–9 | gain of bands 1–8 over full travel; above half, also **fill** | yes, 1 each |
 | Pot 2 | fine tune, ±1 semitone (centre = in tune, clockwise = sharp) | — |
-| Pot 3 | stereo spread width, 0 = mono | — |
+| Pot 3 | stereo image: mono → scatter → orbit, then orbit speed/detune | — |
 | Pots 4–9 | fill *order* for bands 3–8: CCW highpass, centre bandpass, CW lowpass | — |
 | Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
 | Knob 2 (was SPREAD) | shaper window start | yes |
@@ -169,8 +169,41 @@ init for crest factor (measured 2.8 vs 6.8 aligned — aligned clips at full
 sliders). Phase is inaudible on a static spectrum (Ohm's law of acoustics), so
 it never earned a panel control.
 
+**The stereo image is a morph between configurations, not a width fader.** Pot 3
+travels MONO → SCATTER → ORBIT (`kPanAnchor`) and then spends its last stretch on
+the orbit's *motion* rather than its shape. A mono park holds the bottom 8% and
+the three stages split what is left evenly. Width alone was
+the original design and it wasted the knob: scaling one fixed fan makes every
+intermediate a quieter version of the last, so only the two ends were worth
+visiting.
+
+- **The morph runs in position space, then converts once.** Two square roots per
+  slot, 16 per block, regardless of how many anchors the table grows. Morphing
+  in gain space instead would double that, and the per-block pass is the half of
+  the budget that matters here.
+- **New images are free.** The partial loop only ever reads `panDelta_[]`, 8 L/R
+  pairs rebuilt per block; nothing about a new anchor reaches the hot path.
+- **Every anchor must hold `kSlotPat`'s even-k/odd-k balance** or ODD ONLY shoves
+  the image sideways. Asserted per anchor in `tests/slot_table.cpp`.
+- **Nothing reaches a hard pan** except SCATTER's two end slots. Hard panning is
+  what puts half the bank in one channel at full gain instead of all of it at
+  0.707, and it is the only thing that ever moved a witness peak here. ORBIT's
+  radius is 0.8 for exactly this reason, and the test asserts the ceiling.
+- **ORBIT's offsets are not slot order, and its two subsets run at different
+  rates.** Each parity subset gets four points 90° apart and its own phase
+  accumulator, so both sums cancel at *every combination* of the two phases —
+  which is what makes detuning safe. Slot order (`i/8`) leaves each subset
+  summing to ~1.08 and the image leans as it turns. The test sweeps a 64×64 grid
+  over both phases rather than trusting the algebra.
+- At full CW the odd subset reverses and runs at `kPanRotCounter` × the even one.
+  Near −1 the two clouds counter-rotate almost symmetrically and cross about
+  twice per revolution; the small offset from −1 is what stops them locking, and
+  sets how long the full pattern takes to come round (at −0.9918, ~122
+  revolutions — about ten minutes at the full-CW rate).
+
 *Considered and dropped* (Swarm mode, Pigments' Window/Warp modes and Shape
-presets, a master-level pot, an inharmonicity-onset pot): `archives.md`.
+presets, a master-level pot, an inharmonicity-onset pot, anti-phase pan):
+`archives.md`.
 
 ## Gain staging
 

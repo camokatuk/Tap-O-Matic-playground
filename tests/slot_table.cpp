@@ -73,6 +73,92 @@ int main()
         Check(adjacent <= allowed, buf);
     }
 
+    // The pan anchors reuse the n=8 row, so each one has to hold invariant 2 in
+    // its own positions.
+    const unsigned char* row = foxtail::kSlotPat[kN - 1];
+    for (int a = 0; a < foxtail::kPanAnchors; ++a)
+    {
+        float even = 0.f, odd = 0.f;
+        for (int k = 0; k < 8; k += 2) even += foxtail::kPanAnchor[a][row[k]];
+        for (int k = 1; k < 8; k += 2) odd += foxtail::kPanAnchor[a][row[k]];
+        std::snprintf(buf, sizeof buf, "anchor %d parity balance even=%+.2f odd=%+.2f",
+                      a, even, odd);
+        Check(std::fabs(even) < 1e-4f && std::fabs(odd) < 1e-4f, buf);
+    }
+
+    // Nothing may reach a hard pan: that is what keeps the peak profile flat
+    // across the knob, and it is a property of the anchors, not of the morph.
+    {
+        float widest = foxtail::kPanRotAmp;
+        for (int a = 0; a < foxtail::kPanAnchors; ++a)
+            for (int i = 0; i < 8; ++i)
+                if (std::fabs(foxtail::kPanAnchor[a][i]) > widest)
+                    widest = std::fabs(foxtail::kPanAnchor[a][i]);
+        std::snprintf(buf, sizeof buf, "widest pan position %.3f (SCATTER may touch 1.0)",
+                      widest);
+        Check(widest <= 1.f + 1e-6f, buf);
+    }
+
+    // ORBIT moves, and its two parity subsets run at DIFFERENT rates, so their
+    // phases are independent. Balance therefore has to hold for every
+    // combination of the two, not just where they happen to line up -- checked
+    // on a grid rather than argued from the table.
+    {
+        float worstEven = 0.f, worstOdd = 0.f;
+        for (int sa = 0; sa < 64; ++sa)
+            for (int sb = 0; sb < 64; ++sb)
+            {
+                const float pa = (float)sa / 64.f, pb = (float)sb / 64.f;
+                float       even = 0.f, odd = 0.f;
+                for (int k = 0; k < 8; ++k)
+                {
+                    const int   sl = row[k];
+                    const float ph = foxtail::kPanRotSub[sl] ? pb : pa;
+                    const float v  = foxtail::kPanRotAmp
+                                    * std::sin(6.283185307f
+                                               * (ph + foxtail::kPanRotOfs[sl]));
+                    if (k % 2 == 0) even += v;
+                    else odd += v;
+                }
+                if (std::fabs(even) > worstEven) worstEven = std::fabs(even);
+                if (std::fabs(odd) > worstOdd) worstOdd = std::fabs(odd);
+            }
+        std::snprintf(buf, sizeof buf,
+                      "ORBIT parity balance over both phases: worst even=%.4f odd=%.4f",
+                      worstEven, worstOdd);
+        Check(worstEven < 1e-4f && worstOdd < 1e-4f, buf);
+    }
+
+    // Each subset must own exactly the slots of one k-parity, or the two rates
+    // would split a subset and the balance above would not survive detuning.
+    {
+        bool ok = true;
+        for (int k = 0; k < 8; ++k)
+            if (foxtail::kPanRotSub[row[k]] != (unsigned char)(k & 1)) ok = false;
+        std::snprintf(buf, sizeof buf, "ORBIT subsets follow k parity exactly");
+        Check(ok, buf);
+    }
+
+    // Offsets must stay evenly spread, or the slots bunch and the orbit stops
+    // covering the field.
+    {
+        std::set<int> eighths;
+        for (int i = 0; i < 8; ++i)
+            eighths.insert((int)(foxtail::kPanRotOfs[i] * 8.f + 0.5f) & 7);
+        std::snprintf(buf, sizeof buf, "ORBIT offsets use all 8 eighths (%d distinct)",
+                      (int)eighths.size());
+        Check(eighths.size() == 8, buf);
+    }
+
+    // Knots must ascend, or the segment search picks a zero-width span and
+    // divides by zero.
+    for (int a = 0; a + 1 < foxtail::kPanAnchors; ++a)
+    {
+        std::snprintf(buf, sizeof buf, "knot %d (%.2f) < knot %d (%.2f)",
+                      a, foxtail::kPanKnot[a], a + 1, foxtail::kPanKnot[a + 1]);
+        Check(foxtail::kPanKnot[a] < foxtail::kPanKnot[a + 1], buf);
+    }
+
     std::printf("\n%s\n", g_fail ? "FAILED" : "slot table ok");
     return g_fail ? 1 : 0;
 }

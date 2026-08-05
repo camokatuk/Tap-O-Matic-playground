@@ -50,7 +50,7 @@ using namespace oam::time_machine;
 //   Slider 1                -> inharmonicity (0 = pure harmonic series)
 //   Pot 1                   -> spectral shift, +-1 octave (centre = neutral)
 //   Pot 2                   -> fine tune, +-1 semitone (centre = in tune)
-//   Pot 3                   -> stereo spread width (0 = mono)
+//   Pot 3                   -> stereo image: mono / scatter / orbit + its speed
 //   Sliders 2..9            -> gain of bands 1..8, and above half their fill
 //   Pots 4..9               -> fill order of bands 3..8 (CCW HP .. CW LP)
 //   LED 1                   -> inharmonicity amount
@@ -441,7 +441,7 @@ void audioCallback(AudioHandle::InputBuffer  /*in*/,
 
     // Pot 1 -> spectral shift, under slider 1's inharmonicity: both bend the
     // whole spectrum. Pot 2 -> fine tune, under the fundamental's own band.
-    // Pot 3 -> stereo spread.
+    // Pot 3 -> stereo image (morphs configurations, not just width).
     controls.bandShift = 0.5f + 0.5f * Detented(PanPot(0), kShiftDeadzone);
     controls.fineTune  = Detented(PanPot(1), kFineDeadzone);
     controls.spread    = clampf(PanPot(2), 0.0f, 1.0f);

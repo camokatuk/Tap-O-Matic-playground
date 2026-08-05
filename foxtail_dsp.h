@@ -84,6 +84,63 @@ static constexpr unsigned char kSlotPat[8][8] = {
     {0, 3, 5, 1, 7, 4, 2, 6},
 };
 
+// Pan-anchor configurations: the position of each of the 8 pan slots, -1 hard
+// left to +1 hard right. Pot 3 morphs between adjacent rows, so its travel
+// changes the image's SHAPE. Width alone was the original design and it wasted
+// the knob -- scaling one fixed fan makes every intermediate setting a quieter
+// version of the last, so only the two ends were worth visiting.
+//
+// Every row must keep kSlotPat's even-k/odd-k balance (tests/slot_table.cpp) or
+// switch 2 in ODD ONLY shoves the image to one side.
+//
+// Nothing here reaches +-1. Hard panning is what puts half the bank in one
+// channel at full gain instead of all of it at 0.707, and it is the only thing
+// that moved a witness peak when this was first tried -- see archives.md.
+static constexpr int kPanAnchors = 3;
+static constexpr float kPanAnchor[kPanAnchors][8] = {
+    // MONO
+    {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f},
+    // SCATTER -- the even fan, neighbouring partials thrown far apart.
+    {-1.f, -0.714286f, -0.428571f, -0.142857f, 0.142857f, 0.428571f, 0.714286f, 1.f},
+    // ORBIT, frozen at phase 0. UpdateBlock always substitutes the live orbit
+    // here, so these values exist to fix the anchor's shape at rest and to give
+    // the parity test something to check.
+    {0.f, 0.452548f, -0.8f, -0.452548f, -0.452548f, 0.f, 0.452548f, 0.8f},
+};
+static constexpr int kPanRotAnchor = 2;
+
+// A mono park at the bottom, then equal thirds of what is left: mono -> scatter,
+// scatter -> orbit, and above the last knot the shape stops changing and the
+// travel drives MOTION instead (see kPanRotSlow). 0.92 / 3 = 0.306667.
+static constexpr float kPanKnot[kPanAnchors] = {0.08f, 0.5f, 0.75f};
+
+// ORBIT's per-slot phase offsets, in turns, and which of the two phase
+// accumulators each slot rides. Not slot order: the offsets give the even-k and
+// odd-k slot subsets FOUR POINTS 90 DEGREES APART EACH, so both parity sums
+// cancel at every phase, not just at rest. Slot order (i/8) leaves each subset
+// summing to ~1.08 and the image leans as it turns.
+//
+// Splitting the subsets across two accumulators is what lets them run at
+// different rates without ever breaking that: each stays internally balanced
+// whatever its own phase is.
+static constexpr float kPanRotOfs[8] = {0.f,    0.125f, 0.75f,  0.625f,
+                                        0.875f, 0.5f,   0.375f, 0.25f};
+static constexpr unsigned char kPanRotSub[8] = {0, 1, 0, 1, 1, 0, 1, 0};
+
+// Orbit radius. Below 1 on purpose: the slots sweep the field without ever
+// reaching a hard pan, which keeps the peak profile flat across the whole knob.
+static constexpr float kPanRotAmp = 0.8f;
+
+// Revolutions per second at the ORBIT knot and at full CW. Squared against the
+// ramp so the bottom of the range creeps.
+static constexpr float kPanRotSlow = 0.04f;
+static constexpr float kPanRotFast = 0.20f;
+
+// What the odd-k subset's rate is multiplied by at full CW: reversed, and at a
+// ratio that does not divide 1, so the two clouds drift through each other
+// without the image ever repeating.
+static constexpr float kPanRotCounter = -0.9918034f;
+
 static constexpr int kSineBits = 14;
 static constexpr int kSineSize = 1 << kSineBits;
 static constexpr float kTwoPi  = 6.283185307179586f;
@@ -118,9 +175,10 @@ struct Controls
     // middle is a real slope between the two. Driven by GATE on the panel.
     float tilt = 0.f;
 
-    // Pot 2: stereo spread width, 0 (mono) to full. The number of pan positions
-    // is fixed at kSlots — the count was a pot once and only changed the grain
-    // of a cloud the ear already hears as one texture.
+    // Pot 2: stereo image, morphing MONO -> SCATTER -> ORBIT (kPanAnchor), then
+    // spending the rest of the travel on the orbit's speed and detune. The
+    // number of pan positions is fixed at kSlots — the count was a pot once and
+    // only changed the grain of a cloud the ear already hears as one texture.
     float spread = 0.f;
 
     // Pot 3: slides the whole spectral shape — band envelope AND comb — along
@@ -273,6 +331,9 @@ class FoxTailOsc
         smoothCoef_    = 1.f - std::exp(-1.f / (kGainSmoothSec * sampleRate_));
         smoothCoefBlk_ = smoothCoef_;
         lastFrames_    = 0;
+        blockSec_      = 1.f / sampleRate_;
+        panRotPhA_     = 0.f; // zeroed here so a re-Init renders reproducibly
+        panRotPhB_     = 0.f;
 
         // Bands are geometric over the whole bank: bandPos = log2(r) * bandScale_.
         const float lgN = FastLog2((float)kNumPartials);
@@ -331,6 +392,7 @@ class FoxTailOsc
             lastFrames_ = frames;
             const float a = 1.f - std::exp(-(float)frames / (kGainSmoothSec * sampleRate_));
             smoothCoefBlk_ = a > 1.f ? 1.f : a;
+            blockSec_      = (float)frames / sampleRate_;
         }
 
         UpdateBlock(c);
@@ -488,6 +550,14 @@ class FoxTailOsc
     static inline float ClusterStart(float rel, float m, float invM)
     {
         return std::floor(rel * invM) * m;
+    }
+
+    // Sine of a phase in turns, wrapped by the table mask. Block rate and only
+    // for pan positions, so the 14-bit table is far finer than the ear needs.
+    // Callers must keep the argument non-negative; the mask is the only wrap.
+    float SineTurns(float turns) const
+    {
+        return sine_[(int)(turns * (float)kSineSize) & (kSineSize - 1)];
     }
 
     void UpdateBlock(const Controls& c)
@@ -650,10 +720,41 @@ class FoxTailOsc
         // lerp centre -> slot with two FMAs. sqrt is affordable here: 8 turns
         // per block, not 96. Lerping between two equal-power points is not
         // itself equal power, but the dip is a fraction of a dB.
+        //
+        // Pot 3 picks a segment between two anchors and a position within it.
+        // Morphing in POSITION space, not gain space, is what keeps this at
+        // 2 * kSlots square roots however many anchors the table grows to.
+        int seg = 0;
+        while (seg < kPanAnchors - 2 && spread > kPanKnot[seg + 1]) ++seg;
+        const float segT = Clamp01((spread - kPanKnot[seg])
+                                   / (kPanKnot[seg + 1] - kPanKnot[seg]));
+
+        // segT saturates at the ORBIT knot, so above it the shape is fixed and
+        // the remaining travel buys motion: rate first, then the two parity
+        // subsets pulling apart. Rotation only exists in the top segment, and
+        // its rate ramps from zero at SCATTER, so no knot starts motion abruptly.
+        const bool  rotating = seg + 1 == kPanRotAnchor;
+        const float motion   = Clamp01((spread - kPanKnot[kPanRotAnchor])
+                                       / (1.f - kPanKnot[kPanRotAnchor]));
+        const float rate     = rotating ? segT * segT
+                                              * (kPanRotSlow
+                                                 + motion * (kPanRotFast - kPanRotSlow))
+                                        : 0.f;
+
+        // Advancing by the ramped rate rather than gating a free-running phase
+        // means a parked knob holds the orbit where it is.
+        panRotPhA_ += rate * blockSec_;
+        panRotPhB_ += rate * (1.f + motion * (kPanRotCounter - 1.f)) * blockSec_;
+        panRotPhA_ -= std::floor(panRotPhA_);
+        panRotPhB_ -= std::floor(panRotPhB_); // rate can be negative; floor still wraps
+
         for (int i = 0; i < kSlots; ++i)
         {
-            const float pos = (float)i * (2.f / (float)(kSlots - 1)) - 1.f;
-            const float p   = Clamp01(0.5f + 0.5f * spread * pos);
+            const float ph    = kPanRotSub[i] ? panRotPhB_ : panRotPhA_;
+            const float orbit = kPanRotAmp * SineTurns(ph + kPanRotOfs[i]);
+            const float a     = kPanAnchor[seg][i];
+            const float b     = rotating ? orbit : kPanAnchor[seg + 1][i];
+            const float p     = 0.5f + 0.5f * (a + (b - a) * segT);
             panDelta_[2 * i]     = std::sqrt(1.f - p) - kCentre;
             panDelta_[2 * i + 1] = std::sqrt(p) - kCentre;
         }
@@ -826,8 +927,11 @@ class FoxTailOsc
     float  smoothCoef_;    // per sample  (master)
     float  smoothCoefBlk_; // per block   (band gains/pans, parity, shaper set)
     size_t lastFrames_;
+    float  blockSec_;
     float  masterSmooth_;
     float  paritySmooth_;
+    float  panRotPhA_; // ORBIT, even-k slot subset, in turns
+    float  panRotPhB_; // ORBIT, odd-k slot subset (counter-rotates at full CW)
 
     // The controls that reach partial FREQUENCIES. Grouped because they share a
     // reason to be smoothed and a coefficient; the gains are smoothed elsewhere
