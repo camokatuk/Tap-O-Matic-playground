@@ -62,27 +62,36 @@ in the render loop — roughly two instructions in the Shepard clone, which is t
 size of change `archives.md` records as bringing hardware artifacts back with the
 audio bit-identical. So: hardware A/B, not a free edit.
 
-## 5. Cluster's gain compensation scales partials the window never moved
+## 5. Cluster's compensation sags in the middle of the window-start knob
 
-`norm` in `UpdateBlock` is folded into the per-band gains, so it reaches **every**
-partial — including the ones outside the shaper window, which never collapsed and
-have nothing to compensate for.
+**Settled, so that it is not relitigated:** the compensation is applied to the
+WHOLE spectrum, including partials the window never moved. That is deliberate —
+a compensation that only scaled the windowed partials would change the patch's
+tilt as the knob moved, which is a dishonest sound. It may only ever attenuate,
+too (`norm` is capped at unity): the point of the device is to make a few loud,
+not-very-useful patches quieter so everything else can be louder. Boosting a
+quiet patch back up is not its job.
 
-Measured (window from partial 5, 9 wide, max cluster): partial 1 sits outside the
-window and still loses **4.4 dB** when the density knob sweeps 0 → 1. It errs
-quiet, which is why no guard catches it.
+What is open is the SIZE of the cut, which is keyed to `1/winStart`. Measured on
+a CW max cluster at full density, f0 = 110, window wide, sweeping the window
+START knob:
 
-The loud half of this is closed: `norm` is now capped at unity, so the collapse-UP
-direction can no longer boost a static partial past the clip. What remains is the
-attenuation error above — audible as a window-dependent level sag, not a clipping
-risk. A candidate fix (weight the boost by the share of the bank's power inside
-the window) was tried and reverted; see `archives.md`.
+| pos knob | level | cut applied |
+|---|---|---|
+| 0.00 | −20.1 dBFS | −18.1 dB |
+| 0.50 | −25.9 dBFS |  −9.7 dB |
+| 1.00 | −19.3 dBFS |  −0.1 dB |
+
+The raw level falls as the window rises (fewer partials collapse) and the cut
+shrinks alongside it, but they do not track: the patch sags ~6 dB in the middle
+of the knob. The closed form models the window as ONE cluster starting at
+`winStart`, where the reality is several clusters spread across it.
 
 Before landing anything here: run `./tests/run.sh` — `clip_guard` is the gate,
-and its exhaustive sweep is the thing that would catch a regression — then A/B a
+and its exhaustive sweep is what would catch a regression — then A/B a
 partial-window Cluster patch on hardware. The model holds total POWER flat; the
 guard measures PEAK, and those part company exactly when a cluster piles onto one
-frequency.
+frequency. `./tools/headroom.sh` reports the level distribution.
 
 ## 6. Shepard band-boundary tick — known, mitigated, watch it
 

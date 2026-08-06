@@ -234,6 +234,36 @@ int main()
                     patches[j].name.c_str());
     }
 
+    // What raising kHeadroom would cost. The soft clip exists to catch peaks, so
+    // the question is not "does anything cross the knee" but "how many, and how
+    // far past it" — a patch 1 dB over with a 12 dB crest is a few samples.
+    std::printf("\nraising the level (a global gain on top of kHeadroom):\n");
+    std::printf("  %6s  %8s  %10s  %9s\n", "gain", "new max", "over knee", "worst over");
+    for (float g : {0.f, 2.f, 3.f, 4.f, 6.f})
+    {
+        const float lin  = std::pow(10.f, g / 20.f);
+        int         over = 0;
+        float       worst = 0.f;
+        for (const Meas& x : m)
+            if (x.peak * lin > knee)
+            {
+                ++over;
+                worst = std::max(worst, Db(x.peak * lin) - Db(knee));
+            }
+        std::printf("  %+5.1f  %8.3f  %6d %4.1f%%  %6.1f dB\n", g, pmax * lin, over,
+                    100.f * (float)over / (float)m.size(), worst);
+        if (g == 6.f && over)
+        {
+            int shown = 0;
+            for (size_t i = 0; i < m.size() && shown < 5; ++i)
+                if (m[i].peak * lin > knee)
+                {
+                    std::printf("           over at +6: %s\n", patches[i].name.c_str());
+                    ++shown;
+                }
+        }
+    }
+
     std::printf("\nunused headroom at the loudest patch: %.1f dB\n", Db(knee) - Db(pmax));
     std::printf("rms spread p05..p95: %.1f dB (p50 %.1f dBFS)\n",
                 Db(Pct(allRms, 0.95f)) - Db(Pct(allRms, 0.05f)), Db(Pct(allRms, 0.5f)));

@@ -114,8 +114,8 @@ which is a nice panel property, but it leaves the top octaves loud enough to
 hear individual partials beating — exactly what a Shepard glide has to hide.
 Implemented as a **lerp, not a branch**: `shepard` already splits the loop in
 two and a second bool would make it four clones. Level-compensated (`tiltNorm`,
-a quadratic fit to `sqrt(P(0)/P(m))`, worst error 0.06 dB) so the flip changes
-colour and not loudness.
+a quadratic fit to `sqrt(P(0)/P(m))`, worst error 0.06 dB), then `kDarkBoost`
+deliberately puts the step back — see Gain staging.
 
 **The shaper (knobs 2–5, switch 1)** retunes partials inside a movable window,
 once per block. Partials outside stay anchored and hold the pitch while the ones
@@ -295,13 +295,24 @@ normalisation were both rejected (`archives.md`). `kHeadroom` rides in the
 per-band gain, not the partial loop — it is a constant and everything it scales
 flows through that gain anyway.
 
-`kHeadroom` is **0.30**, raised from 1/5 once the `1/r` tilt had cost ~5 dB and
-left the worst patch peaking 0.497 against a 0.85 knee. Note what it is sized
-against: all eight sliders at maximum. A bank with random phases sums as √N, so
-an ordinary two- or three-band patch sits 6–9 dB below the case being protected
-— every normal patch pays for one nobody plays. Raising it further is a real
-option, but it means accepting that the all-up patch engages the soft clip,
-which changes what `clip_guard` asserts.
+`kHeadroom` is **0.42**, sized so the loudest patch the panel can reach lands at
+0.832 against the 0.85 knee — 0.2 dB spare. There is deliberately no room left:
+anything that makes a patch louder now trips `clip_guard`.
+
+`kDarkBoost` (**1.41**, +3 dB) rides on top of `tiltNorm`, faded out across the
+morph so the bright end keeps the level the tilt fit gives it. Dark peaks ~3.5 dB
+below bright at equal RMS — fewer loud high partials to align — so it has
+headroom bright does not. Spending it makes dark ~2.5 dB louder than bright in
+RMS: a deliberate level step on GATE, taken because the extra lands in the low
+end. `tiltNorm` alone would keep the two matched.
+
+Together these lifted the median patch from **−20.9 to −15.1 dBFS**. Note what
+the budget is sized against: all eight sliders at maximum. A bank with random
+phases sums as √N, so an ordinary two- or three-band patch still sits 4–5 dB
+below the case being protected. Going further means accepting that the all-up
+patch engages the soft clip, which changes what `clip_guard` asserts — and the
+patches that cross first are not exotic: at +2 dB more it is `cluster, 8 sliders
+up, dark, f0=55, no cluster at all`, the plain drawbar patch.
 
 Measured worst case over 22,875 patches: **peak 0.594 against the 0.85 knee**,
 at `cluster cfg2 f0=220 A=0.00 B=0.75 pos=0.75 win=1.00`. The hot corner is the

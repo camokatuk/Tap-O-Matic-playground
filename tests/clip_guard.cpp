@@ -1,9 +1,7 @@
 // Pass/fail guard on the Cluster collapse compensation.
 //
-// Asserts the soft clip never works at all. Everything is measured at the
-// firmware's block size,
-// sample rate and master level, with the engine's pre-clip signal recovered by
-// inverting SoftClip.
+// Asserts the soft clip never works at all. Rendering and measurement come from
+// harness.h, at the firmware's block size, sample rate and master level.
 //
 // Built twice by run.sh:
 //   FOXTAIL_CLUSTER_NORM=1  compensation on  -> nothing may reach the knee
@@ -12,26 +10,23 @@
 //
 // The witness peaks recorded below were measured with the compensation off.
 
-#include "../foxtail_dsp.h"
+#include "harness.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <memory>
 #include <random>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace {
 
-constexpr float  kSampleRate = 48000.f;
-constexpr size_t kBlock      = 5;
-constexpr float  kMaster     = 0.7f;
-
-// Renders far below the knee so the clip never engages and the true peak is
-// visible; the engine is linear ahead of SoftClip, so scaling back is exact.
-constexpr float kAtten = 1.f / 32.f;
+using fxtest::kBlock;
+using fxtest::kMaster;
+using fxtest::kSampleRate;
+using fxtest::Meas;
+using fxtest::Patch;
+using fxtest::Run;
 
 int g_fail = 0;
 
@@ -41,51 +36,7 @@ void Check(bool ok, const std::string& what)
     std::printf("  %s %s\n", ok ? "ok  " : "FAIL", what.c_str());
 }
 
-struct Meas
-{
-    float peak; // pre-clip, at kMaster
-    float rms;
-};
-
-Meas Run(foxtail::FoxTailOsc& osc, foxtail::Controls c, float seconds = 0.4f)
-{
-    osc.Init(kSampleRate); // fixed phase seed: results are reproducible
-    c.master = kMaster * kAtten;
-
-    float        outL[kBlock], outR[kBlock];
-    const size_t settle  = (size_t)(0.1f * kSampleRate / kBlock);
-    const size_t measure = (size_t)(seconds * kSampleRate / kBlock);
-
-    for (size_t i = 0; i < settle; ++i) osc.Process(c, outL, outR, kBlock);
-
-    float  peak = 0.f;
-    double s2   = 0;
-    for (size_t i = 0; i < measure; ++i)
-    {
-        osc.Process(c, outL, outR, kBlock);
-        for (size_t j = 0; j < kBlock; ++j)
-        {
-            peak = std::max(peak, std::max(std::fabs(outL[j]), std::fabs(outR[j])));
-            s2 += (double)outL[j] * outL[j] + (double)outR[j] * outR[j];
-        }
-    }
-
-    Meas m;
-    m.peak = peak / kAtten;
-    m.rms  = (float)(std::sqrt(s2 / (2.0 * measure * kBlock)) / kAtten);
-    return m;
-}
-
-// Sweeps are built as a patch list and rendered across cores. Run() re-Inits
-// the oscillator per patch, so a patch's result does not depend on what ran
-// before it and sharding cannot change an answer.
-struct Patch
-{
-    foxtail::Controls c;
-    std::string       name;
-    float             seconds;
-};
-
+// The sweeps report a single worst patch; harness.h renders them all.
 struct Worst
 {
     float  peak = 0.f;
@@ -93,43 +44,17 @@ struct Worst
     size_t idx  = (size_t)-1;
 };
 
-void RenderRange(const std::vector<Patch>& patches, size_t lo, size_t hi, Worst* out)
+Worst RenderWorst(const std::vector<Patch>& patches)
 {
-    // Heap, not stack: FoxTailOsc is 68 KB, past a default thread stack.
-    std::unique_ptr<foxtail::FoxTailOsc> osc(new foxtail::FoxTailOsc);
-    for (size_t i = lo; i < hi; ++i)
-    {
-        const Meas m = Run(*osc, patches[i].c, patches[i].seconds);
-        if (m.peak > out->peak)
-        {
-            out->peak = m.peak;
-            out->rms  = m.rms;
-            out->idx  = i;
-        }
-    }
-}
-
-Worst RenderAll(const std::vector<Patch>& patches)
-{
-    if (patches.empty()) return Worst();
-
-    size_t n = std::thread::hardware_concurrency();
-    if (n == 0) n = 1;
-    if (n > patches.size()) n = patches.size();
-
-    std::vector<Worst>       shard(n);
-    std::vector<std::thread> threads;
-    threads.reserve(n);
-    for (size_t t = 0; t < n; ++t)
-        threads.emplace_back(RenderRange, std::cref(patches), patches.size() * t / n,
-                             patches.size() * (t + 1) / n, &shard[t]);
-    for (std::thread& t : threads) t.join();
-
+    const std::vector<Meas> m = fxtest::RenderAll(patches);
     Worst best;
-    for (const Worst& s : shard) // ties resolve to the lowest index, so the
-        if (s.peak > best.peak   // reported patch does not depend on the shard
-            || (s.peak == best.peak && s.idx < best.idx)) // count
-            best = s;
+    for (size_t i = 0; i < m.size(); ++i)
+        if (m[i].peak > best.peak) // ties keep the lowest index, so the reported
+        {                          // patch does not depend on the shard count
+            best.peak = m[i].peak;
+            best.rms  = m[i].rms;
+            best.idx  = i;
+        }
     return best;
 }
 
@@ -298,7 +223,7 @@ int main()
         sweep.push_back(p);
     }
 
-    const Worst worst = RenderAll(sweep);
+    const Worst worst = RenderWorst(sweep);
 
     char buf[224];
     std::snprintf(buf, sizeof buf, "%zu patches, worst peak %.3f (%s)", sweep.size(),
@@ -340,7 +265,7 @@ int main()
                             longRun.push_back(p);
                         }
     }
-    const Worst wLong = RenderAll(longRun);
+    const Worst wLong = RenderWorst(longRun);
     std::snprintf(buf, sizeof buf, "worst peak %.3f, crest %.1f (%s)", wLong.peak,
                   wLong.peak / wLong.rms, longRun[wLong.idx].name.c_str());
     Check(wLong.peak < knee, buf);
@@ -403,16 +328,13 @@ int main()
         c.shapeA  = 1.f;
         c.shapeB  = 0.f;
         const Meas m = Run(osc, c);
-        // 0.2708 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
+        // 0.5312 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
         // compensation is boost=1 and only FastRSqrt(1) = 0.9983 remains.
-        // Re-measure whenever kHeadroom, the pan layout or the tilt changes --
-        // all three move it, and it scales linearly with kHeadroom.
-        // 0.2434 when cfg 1 was SCATTER. ORBIT is no wider (radius 0.8, no hard
-        // pan) but a sine dwells near its extremes, so evenly spaced phases give
-        // a clustered set of positions rather than the fan's even one, and
-        // partials sharing a position sum coherently.
-        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.2708)", m.peak);
-        Check(std::fabs(m.peak - 0.2708f * 0.9983f) < 0.005f, buf);
+        // Re-measure whenever kHeadroom, kDarkBoost, the pan layout or the tilt
+        // changes -- all of them move it, and it scales linearly with kHeadroom.
+        // cfg 1 is ORBIT and dark, so it carries kDarkBoost too.
+        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.5312)", m.peak);
+        Check(std::fabs(m.peak - 0.5312f * 0.9983f) < 0.005f, buf);
     }
     {
         foxtail::Controls c;

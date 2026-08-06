@@ -476,15 +476,13 @@ class FoxTailOsc
     // starting at phase 0 — that 8.8 dB is what phase dispersion buys, and it is
     // why it is on by default).
     //
-    // Raised from 1/5 after the tilt went to 1/r, which cost ~5 dB and left the
-    // worst patch anywhere peaking 0.497 against the 0.85 knee — 4.6 dB unused.
-    // 0.30 spends 3.5 dB of that and keeps the guard's contract (nothing reaches
-    // the knee, worst case ~0.75). Sizing this to all-eight-sliders-up is
-    // conservative to begin with: a bank with random phases sums as sqrt(N), so
-    // a normal two- or three-band patch sits 6-9 dB below the case this
-    // protects. Going louder still means deciding that patch may saturate --
-    // which is what a soft clip is for, but it is a contract change, not a tweak.
-    static constexpr float kHeadroom = 0.30f;
+    // Sized so the worst patch the panel can reach lands just under the knee:
+    // 0.832 against 0.85, i.e. 0.2 dB spare. The guard's contract (nothing
+    // reaches the knee) still holds, but there is no room left in it — a change
+    // that makes any patch louder now trips clip_guard, which is the intent.
+    // Going further means deciding the loudest patch may saturate; tools/
+    // headroom.sh reports what that would cost and which patches pay it.
+    static constexpr float kHeadroom = 0.42f;
 
     // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
     static constexpr float kDensityMax  = 0.995f;
@@ -563,6 +561,12 @@ class FoxTailOsc
     // squared. tools/ has no generator for this; it is ten lines of Python.
     static constexpr float kTiltNorm1 = -0.5604f;
     static constexpr float kTiltNorm2 = 0.1240f;
+
+    // Dark's own boost, faded out across the morph so the bright end keeps the
+    // level the fit above gives it. Dark peaks ~3.5 dB below bright for the same
+    // RMS -- fewer loud high partials to align -- so it has headroom bright does
+    // not, and spending it puts the extra where the low end is.
+    static constexpr float kDarkBoost = 1.41f;
 
     // Partials fade out over the top 5% of the band rather than switching off:
     // a partial blinking off as it crosses Nyquist is a click.
@@ -898,7 +902,8 @@ class FoxTailOsc
         // sqrt(P(0)/P(m)), worst error 0.06 dB. Like the Cluster compensation it
         // assumes a flat envelope: with only a few low bands up the two slopes
         // are much closer together and this over-corrects a little.
-        const float tiltNorm = 1.f + tiltSmooth_ * (kTiltNorm1 + tiltSmooth_ * kTiltNorm2);
+        const float tiltNorm = (1.f + tiltSmooth_ * (kTiltNorm1 + tiltSmooth_ * kTiltNorm2))
+                               * (kDarkBoost - (kDarkBoost - 1.f) * tiltSmooth_);
 
         // One smoothed gain per band, not an L/R pair: pan left the bands when
         // the spread became global, which is what pays for the slot lookup.
