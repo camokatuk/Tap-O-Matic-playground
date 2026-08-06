@@ -86,16 +86,16 @@ static constexpr unsigned char kSlotPat[8][8] = {
 
 // Pan-anchor configurations: the position of each of the 8 pan slots, -1 hard
 // left to +1 hard right. Pot 3 morphs between adjacent rows, so its travel
-// changes the image's SHAPE. Width alone was the original design and it wasted
-// the knob -- scaling one fixed fan makes every intermediate setting a quieter
-// version of the last, so only the two ends were worth visiting.
+// changes the image's SHAPE rather than its width: scaling one fixed fan makes
+// every intermediate setting a quieter version of the last, so only the two ends
+// of such a knob are worth visiting.
 //
 // Every row must keep kSlotPat's even-k/odd-k balance (tests/slot_table.cpp) or
 // switch 2 in ODD ONLY shoves the image to one side.
 //
-// Nothing here reaches +-1. Hard panning is what puts half the bank in one
-// channel at full gain instead of all of it at 0.707, and it is the only thing
-// that moved a witness peak when this was first tried -- see archives.md.
+// Nothing here reaches +-1. Hard panning puts half the bank in one channel at
+// full gain instead of all of it at 0.707, and it is the only thing here that
+// moves a witness peak (archives.md).
 static constexpr int kPanAnchors = 3;
 static constexpr float kPanAnchor[kPanAnchors][8] = {
     // MONO
@@ -177,8 +177,8 @@ struct Controls
 
     // Pot 2: stereo image, morphing MONO -> SCATTER -> ORBIT (kPanAnchor), then
     // spending the rest of the travel on the orbit's speed and detune. The
-    // number of pan positions is fixed at kSlots — the count was a pot once and
-    // only changed the grain of a cloud the ear already hears as one texture.
+    // number of pan positions is fixed at kSlots: it only sets the grain of a
+    // cloud the ear already hears as one texture, so it does not earn a control.
     float spread = 0.f;
 
     // Pot 3: slides the whole spectral shape — band envelope AND comb — along
@@ -297,9 +297,9 @@ static inline float Smooth(float& s, float target, float k)
 
 // Output clip: unity below the knee, parabolic to a hard cap at 2 - knee.
 // The knee sits above the loudest normal patch (peak 0.73, all sliders up and
-// hard-panned; tests/clip_sweep.cpp), so an oscillator patch passes bit-exact
-// and only Cluster's beat transients get caught. The old cubic had no linear
-// region and put ~-35 dB of waveshaping on everything.
+// hard-panned; tests/clip_guard.cpp), so an oscillator patch passes bit-exact
+// and only Cluster's beat transients get caught. Not a cubic: no linear region
+// means ~-35 dB of waveshaping on everything.
 static constexpr float kClipKnee = 0.85f;
 static inline float SoftClip(float x)
 {
@@ -525,15 +525,13 @@ class FoxTailOsc
     static constexpr float kEndFade = (float)kNumPartials + 1.f;
 
     // How many partials the ends take to fade. The wrap stays exact at any width
-    // because the fade is a function of RATIO alone, so the ensemble either side
-    // of it is still identical. Wide because at 1 the newest partial is also the
-    // loudest in the bank under any tilt, so it swelled in from nothing once per
-    // cycle and the glide read as a loop. Taste constant: 1 restores the old
-    // hard bottom, larger hollows the low end further.
+    // because the fade is a function of RATIO alone. Wide because at 1 the newest
+    // partial is also the loudest in the bank under any tilt, so it arrives from
+    // nothing once per cycle and the glide reads as a loop. Taste constant:
+    // smaller is a harder bottom, larger hollows the low end further.
     static constexpr float kEndFadeW   = 4.f;
 
-    // Window shoulder, in partials: Shepard's width, and the floor under
-    // Cluster's proportional one.
+    // Window shoulder, in partials. Both modes; see `edge` in UpdateBlock.
     static constexpr float kWinEdge = 1.f;
 
     // Knob 4's dead centre, shared by both modes so the panel means one thing:
@@ -548,15 +546,12 @@ class FoxTailOsc
     // back on itself — glides at the same apparent speed and takes twice as long
     // to wrap.
     //
-    // Ceiling is 1 partial/s. Above roughly half that the illusion stops being
-    // one: partial 1 travels a whole octave per wrap while the top of the bank
-    // moves 24 cents, so at several wraps a second the ear tracks the individual
-    // sweeps instead of the ensemble and it reads as a repeating zap. The old
-    // 10/s ceiling spent the top fifth of the travel there.
-    //static constexpr float kPhiRateMin  = 0.005f; // partials/s at the deadzone edge
-     static constexpr float kPhiRateMin  = 0.01f;   // partials/s at the deadzone edge
-    //static constexpr float kPhiRateOct  = 7.6439f; // log2(1 / kPhiRateMin)
-     static constexpr float kPhiRateOct  = 9.9658f; // log2(10 / kPhiRateMin)
+    // Ceiling is 10 partials/s. The illusion holds to roughly half a wrap per
+    // second: `k + phi` moves partial 1 an octave per wrap and the top of the
+    // bank 24 cents, so past that the ear tracks the individual sweeps and the
+    // top of the travel is a zap effect rather than an endless rise.
+    static constexpr float kPhiRateMin  = 0.01f;   // partials/s at the deadzone edge
+    static constexpr float kPhiRateOct  = 9.9658f; // log2(10 / kPhiRateMin)
 
     // Jack motion is folded into [-kPhiWrapFold, 1 - kPhiWrapFold) travel per
     // block, so anything past half a wrap reads as a ramp resetting rather than
@@ -644,12 +639,9 @@ class FoxTailOsc
     // does not depend on how carefully phi was aimed. Once per wrap, at block
     // rate; the render loop never sees it.
     //
-    // [lo, hi] is the range the window actually MOVES. Rolling the whole bank
-    // rolled the static partials too, which is a phase step in a partial that
-    // never went anywhere — with the window above the fundamental, that is the
-    // loudest partial in the bank taking a new phase every wrap. The step is the
-    // difference between two unrelated accumulators, so it popped on some cycles
-    // and not others. Measured 54x the median sample step; 15x without it.
+    // [lo, hi] is the range the window actually MOVES: re-phasing a partial that
+    // went nowhere is a step between two unrelated accumulators, and with the
+    // window above the fundamental that partial is the loudest in the bank.
     void RollPartials(int n, int lo, int hi)
     {
         const int m = n > 0 ? n : -n;
@@ -706,8 +698,8 @@ class FoxTailOsc
         // same way the gains are. Raw, these land on the frequencies once per
         // block, so ADC noise is random FM at the callback rate — ~2 cents per
         // LSB with the window collapsed onto one cluster, which is the crackle.
-        // One-poles, NOT the backlash gate that was tried and clicked
-        // (archives.md): a gate makes the noise sparse and larger instead.
+        // One-poles, not a backlash gate: a gate makes the noise sparse and
+        // larger instead (archives.md).
         // Smoothing lives here rather than at the hardware seam so the emulator
         // gets it too — it runs this engine, and its CV sources must behave like
         // a patched jack. Pitch is deliberately NOT here: it would lag V/oct.
@@ -815,11 +807,10 @@ class FoxTailOsc
         // knob positions where Cluster (knob 5 = density) sounded fine.
         const float winGain   = shepard ? 1.f - shapeB : 1.f;
         // Deadzone at the bottom, rescaled so the knob still reaches full: the
-        // shift is density * (m - 1) partials, so at a wide cluster a knob
-        // leaking half a percent (pot end, stale CV null — knobPlusCv clamps at
-        // 0, which rectifies noise into a positive bias) already detunes the
-        // bank. Cluster only; Shepard reads shapeB raw, where the same end is
-        // unity gain.
+        // shift is density * (m - 1) partials, so at a wide cluster half a
+        // percent of leak (pot end, or a stale CV null past knobPlusCv's clamp
+        // at 0) already detunes the bank. Cluster only — Shepard reads shapeB
+        // raw, where the same end is unity gain.
         const float density   = std::fminf(
             std::fmaxf((shapeB - kDensityDead) * (1.f / (1.f - kDensityDead)), 0.f),
             kDensityMax);
@@ -875,9 +866,8 @@ class FoxTailOsc
         // r^-2a over the collapsed cluster gives ln(1+t)/t at a = 1/2 but
         // 1/(1+t) at a = 1, so the sawtooth slope needs its own ratio,
         // (1+x)/(1+y). The tilt morphs between the two, so the boosts do too:
-        // exact at both ends, and the middle is not a power law anyway.
-        // Missing this is what made the density knob swing 6.4 dB when the tilt
-        // changed — the compensation was still solving the old spectrum.
+        // exact at both ends, and the middle is not a power law anyway. Tied to
+        // the tilt exponent: change the tilt law and this has to be re-derived.
         //
         // Both ratios are really over the interval the members end up occupying,
         // [a, a+y] in units of the window start. Collapsing down leaves a = 1;
@@ -893,11 +883,10 @@ class FoxTailOsc
         // Smoothed at block rate like the band gains: knob 5 moves this ~2.6x
         // faster than Shepard's duck moves winGain, and a gain stepping at
         // block rate is an AM sideband at the callback rate (whinebug.md).
-        // Attenuate only. boost < 1 is the collapse-UP direction, where the model
-        // says the pile moved somewhere quiet and asks for gain — and it asks for
-        // several times unity at max cluster, which puts the wide window past the
-        // clip (todo.md 5). It reaches partials the window never moved, so the
-        // request is wrong there anyway.
+        // Attenuate only. boost < 1 is collapse-UP, where the model asks for
+        // gain — several times unity at max cluster, which takes a wide window
+        // past the clip. It also reaches partials the window never moved, so the
+        // request is wrong for them either way (todo.md).
         const float norm = (shepard || !FOXTAIL_CLUSTER_NORM)
                                ? 1.f
                                : std::fminf(FastRSqrt(boost), 1.f);
@@ -1031,25 +1020,22 @@ class FoxTailOsc
         // stranded near Nyquist.
         //
         // Exactly one partial wide, both modes. One spacing is all the anti-click
-        // needs, and proportional to the WIDTH it reached ~10 partials below a
-        // wide window's start: no window position gave back a static, full-level
-        // fundamental. In Shepard that fundamental was ducked and tens of cents
-        // sharp; in Cluster the density knob dragged it toward winStart even at
-        // knob 4's detent, where nothing is supposed to move. Shepard also needs
-        // it at one for the snap above to land every window weight on 0 or 1.
-        // Narrowing it only clears the clip guard with the boost capped below.
+        // needs, and any wider reaches partials the window is supposed to leave
+        // alone: Shepard ducks the fundamental and pulls it sharp, Cluster lets
+        // the density knob drag it even at knob 4's detent. Shepard also needs it
+        // at one for the snap above to land every window weight on 0 or 1. It is
+        // only this narrow because `norm` below is capped — see there.
         const float edge    = kWinEdge;
         const float invEdge = 1.f / edge;
         const float loEdge  = winStart - edge;
         const float hiEdge  = winEnd + edge;
 
-        // Cluster's grid anchor: the window start as an INTEGER partial. Off a
-        // fractional anchor, m = 1 lands a partial on the grid point below it
-        // instead of on itself, so the density knob detuned the whole window at
-        // knob 4's detent. Also what puts a collapsed cluster on exact multiples
-        // of m. Not the taper's foot: anchoring below winStart pulls the partials
-        // under the taper into clusters of their own, and they are loud enough
-        // down there to push the clip guard past its knee.
+        // Cluster's grid anchor, as an INTEGER partial: off a fractional anchor,
+        // m = 1 lands a partial on the grid point below it instead of on itself,
+        // and the density knob detunes the whole window at knob 4's detent. Also
+        // what puts a collapsed cluster on exact multiples of m. The window start,
+        // not the taper's foot — anchoring below winStart drags the partials
+        // under the taper into clusters of their own, past the clip guard's knee.
         const float p0 = std::fmaxf(1.f, std::floor(winStart));
         const float clusterBase = p0 + oLo + (oHi - oLo) * mFrac;
 
@@ -1125,15 +1111,15 @@ class FoxTailOsc
             //
             // Shepard needs one anyway: partials slide through the envelope, and
             // a step at a boundary is an audible tick as each one crosses. It is
-            // kXfadeW of a band wide instead of the old 35%, linear instead of
-            // smoothstepped, and folded to one load plus one FMA. Free in the
-            // budget that matters — `shepard` is loop-invariant, so GCC
-            // unswitches it and the Cluster clone carries none of this.
+            // kXfadeW of a band wide, linear rather than smoothstepped, and
+            // folded to one load plus one FMA. Free in the budget that matters —
+            // `shepard` is loop-invariant, so GCC unswitches it and the Cluster
+            // clone carries none of this.
             // Cluster indexes the envelope by partial number, so log2(sel) is
             // log2(k+1) + log2(bandShift) and the first term depends on nothing
             // a control can move — it is a table, not a computation. Shepard
             // indexes by the shifted ratio, which really does vary, so it keeps
-            // the call. This was the single most expensive line in the loop.
+            // the call. The most expensive line in the loop.
             const float bp = shepard ? FastLog2(sel) * bandScale_ - 0.5f
                                      : bpIdx_[k] + bpShift_;
             int         b  = (int)bp;

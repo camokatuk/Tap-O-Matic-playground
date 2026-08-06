@@ -50,9 +50,9 @@ Knobs 2–5 (+ their CVs) are smoothed by a PLAIN one-pole in the engine
 partial frequencies, so raw ADC noise there is FM at the callback rate (~2 cents
 per LSB with the window collapsed onto one cluster). Smoothing lives in the
 engine, not the hardware seam, so the emulator gets it too. What must NOT come
-back is the backlash GATE: a gate + one-pole was tried, audibly clicked, and was
-rolled back (`archives.md`) — it converts dense tiny noise into sparse larger
-steps. A plain smoother does the opposite. Pitch (knob 1 / V-oct) is left
+back is the backlash GATE (`archives.md`): it converts dense tiny noise into
+sparse larger steps, which clicks. A plain smoother does the opposite. Pitch
+(knob 1 / V-oct) is left
 unsmoothed on purpose: smoothing it would lag V/oct tracking, and pitch noise is
 common-mode vibrato, far less audible than the shaper's differential FM.
 
@@ -122,8 +122,9 @@ once per block. Partials outside stay anchored and hold the pitch while the ones
 inside go weird; position and width are CV-able, so the window itself is
 playable. Knobs 2–3 mean the same thing in both modes — that's what makes a
 screenless panel survive the mode switch. Window edges are tapered (smoothstep
-over 10% of width): a hard edge clicks as sweeping knob 2/3 drags partials
-across it.
+over `kWinEdge` = one partial, both modes): a hard edge clicks as sweeping knob
+2/3 drags partials across it, and anything wider reaches partials the window is
+supposed to leave alone.
 
 - **Cluster** — `r_k = k·(1−density) + density·s_c` (s_c = the target inside k's
   cluster). Density is capped at 0.995; 0.9–1 is the useful beating zone.
@@ -137,22 +138,30 @@ across it.
   base the partial loop already sums, so the second direction costs the loop
   nothing.
   Partials-per-cluster soft-steps up to `2^(log2 N + 0.5)`, so the knob can reach
-  a *single* cluster — at the old ceiling of 64 a second cluster start was
-  stranded high in the spectrum and could not be removed. The window taper sits
-  **outside** the window (a partial at `winStart` is already fully shifted);
-  inside, a full-width window left the top ~9 partials at ~20 kHz whatever the
-  other knobs did. `ClusterStart` clamps its `floor()` input at 0 — below
-  `winStart` it would go negative and put the cluster start at `p − M`. (It
-  returns the cluster START; the two soft-step groupings share one collapse and
-  one crossfade instead of each carrying its own — cheaper, audio unchanged.)
-  Cluster samples the envelope at the partial **index**, not the shifted
-  frequency, so a slider always owns the same harmonics no matter where the
-  collapse dragged them. With frequency-sampling, sweeping density emptied the
-  top of the spectrum and the upper sliders went dead under your fingers. So
-  sliders pick the *ingredients* in Cluster and *EQ the output* in Shepard —
-  they mean different things per mode, which is the same bargain knobs 4–5
-  already make. Indexing by partial number is also what makes the band lookup a
-  table (see below).
+  a *single* cluster. The window taper sits **outside** the window (a partial at
+  `winStart` is already fully shifted).
+  - ⚠️ **The grid is anchored at `p0 = floor(winStart)`, an integer partial.**
+    Off a fractional anchor, `m = 1` sends a partial to the grid point below it
+    rather than to itself, so density detunes the whole window at knob 4's
+    detent — the mode's neutral position stops being neutral. The integer anchor
+    is also what lands a collapsed cluster on exact multiples of `m`. It must be
+    the window start and not the taper's foot: anchored below `winStart` the
+    partials under the taper form clusters of their own, down where the tilt
+    makes them loud, and the clip guard goes past its knee.
+  - **Density has a 2% deadzone at the bottom** (`kDensityDead`). The shift is
+    `density · (m − 1)` partials, so at a wide cluster half a percent of leak —
+    a pot that does not quite reach its end, or a stale CV null past
+    `knobPlusCv`'s clamp — is already an audible detune. Cluster only; Shepard
+    reads the same knob raw.
+
+  `ClusterStart` clamps its `floor()` input at 0, below the anchor it would go
+  negative and put the cluster start at `p − M`. (It returns the cluster START;
+  the two soft-step groupings share one collapse and one crossfade instead of
+  each carrying its own.) Cluster samples the envelope at the partial **index**,
+  not the shifted frequency, so a slider always owns the same harmonics no matter
+  where the collapse dragged them — sliders pick the *ingredients* in Cluster and
+  *EQ the output* in Shepard, the same bargain knobs 4–5 already make. Indexing
+  by partial number is also what makes the band lookup a table (see below).
 - **Shepard** — `r_k = k + phi` inside the window. The band envelope is sampled
   at the *shifted* frequency, so at phi=1 the ensemble is identical to phi=0 and
   the wrap is seamless (measured flat to 0.17% over a phi sweep). Wide window +
@@ -166,23 +175,22 @@ across it.
     exact rather than nearly: amplitude is a function of ratio alone, so the
     ensemble either side of a wrap is the same sound.
   - **The fade is `kEndFadeW` = 4 partials wide, not 1.** Any width keeps the
-    wrap exact; the width is the low end's envelope. At 1, the newest partial
-    was also the loudest in the bank under either tilt, so it swelled in from
-    nothing once per cycle and the glide read as a *loop* rather than an endless
-    rise. At 4 the cyclic swing of the low end drops from 0.91 dB to 0.09 dB and
-    of the whole bank from 0.34 dB to 0.03 dB, at the price of ~8 dB of low end.
-    A taste constant: 1 restores the old hard bottom.
+    wrap exact; the width is the low end's envelope. At 1 the newest partial is
+    also the loudest in the bank under either tilt, so it arrives from nothing
+    once per cycle and the glide reads as a *loop* rather than an endless rise.
+    At 4 the cyclic swing of the low end is 0.09 dB and of the whole bank
+    0.03 dB (against 0.91 and 0.34 at 1), at the price of ~8 dB of low end.
+    A taste constant: smaller is a harder bottom.
   - **Phi's range doubles under ODD ONLY.** The wrap only closes when the
     surviving set lands back on itself: at phi=1 the odd set {1,3..95} sits on
     the EVEN positions {2,4..96}, so it jumps; at phi=2 it sits on {3,5..97},
     itself relabelled. Per block, so free.
-  - **The rate tops out at 1 partial/s** (`kPhiRateMin`, `kPhiRateOct`), i.e. one
-    wrap per second. Set by ear: past roughly half that the illusion stops being
-    one. `k + phi` moves partial 1 a whole octave per wrap and partial 72 by 24
-    cents, so at several wraps a second the ear tracks the individual sweeps
-    instead of the ensemble — reported as "sounds like lasers", which is exactly
-    what an octave zap twice a second is. The first ceiling was 10/s and spent
-    the top fifth of the travel above the usable range.
+  - **The rate tops out at 10 partials/s** (`kPhiRateMin`, `kPhiRateOct`). The
+    illusion itself holds to roughly half a wrap per second: `k + phi` moves
+    partial 1 a whole octave per wrap and partial 72 by 24 cents, so past that
+    the ear tracks the individual sweeps instead of the ensemble. The top of the
+    travel is therefore a zap effect rather than an endless rise — deliberate,
+    but it means the usable Shepard range is the bottom of the knob.
   - **Phi is a position, not a knob reading** (`AdvancePhi`). The knob sets a
     *rate* in partials/s and the jack contributes its own *change*, folded so a
     step of more than half a wrap reads as a ramp resetting rather than as a
@@ -200,40 +208,31 @@ across it.
     *partial*, not the frequency, so without the roll all 96 stepped phase at
     once — a click whose size did not depend on how carefully phi was aimed. The
     roll is a rotate of `phase_[]` plus an offset into the pan table, once per
-    wrap at block rate; the render loop never sees it (it got marginally cheaper,
-    since `kSlotPat` moved out of it into `panPartial_`).
+    wrap at block rate; the render loop never sees it.
   - ⚠️ **The roll covers only `[moveLo, moveHi]`, the partials the window
-    moves.** Rolling the whole bank also re-phases the STATIC partials, which
-    went nowhere — with the window above the fundamental that is the loudest
-    partial in the bank taking a new phase every wrap, and since the step is the
-    difference between two unrelated accumulators it pops on some cycles and not
-    others. Measured on a window from partial 2: **54x** the median sample step,
-    against 4.5x for a full-range window; restricting the roll brought it to
-    5.7x. No amplitude metric can see this — a phase step moves no gain — so it
-    survived a "0.00 dB swing over a cycle" measurement. Use the first difference
-    of the output when checking a wrap, not levels.
-    - The pan roll is load-bearing and stays global: with the phase roll fixed,
-      removing it puts the same patch back to 17.5x, because the moving partials
-      genuinely need their image to follow the frequency. Static partials do
-      still change pan slot at a wrap; measurably that costs 5.7x against the
-      4.5x floor, which is the residual to attack first if this comes back.
+    moves.** Re-phasing a partial that went nowhere is a step between two
+    unrelated accumulators, and with the window above the fundamental that
+    partial is the loudest in the bank. Restricting the roll takes a window from
+    partial 2 from **54x** the median sample step to 5.7x, against a 4.5x floor.
+    - **A phase step moves no gain, so no level metric can see it** — this
+      survived a "0.00 dB swing over a cycle" measurement. Check a wrap with the
+      first difference of the output, not with levels.
+    - The pan roll stays global and is load-bearing: removing it puts the same
+      patch back to 17.5x, because a moving partial needs its image to follow its
+      frequency. Static partials do still change pan slot at a wrap, which is
+      most of the 5.7x — the residual to attack first if this comes back.
   - **The window really excludes what it excludes, and the fade follows it.**
-    Two changes that only make sense together. Shepard's window shoulder is
-    exactly one partial (Cluster keeps the `winWidth * 0.1` taper — see todo.md
-    for why the gate exists), and the window start and width snap to whole
-    partials, on a `roll`-partial grid so ODD ONLY lands on odd partials.
-    Together those put every partial's window weight at exactly **0 or 1**: a
-    weight strictly between them is what breaks a windowed wrap, since such a
-    partial moves a fractional step and lands nowhere. The ends fade then keys to
-    `[max(winStart,1), min(winEnd, kEndFade)]` instead of the bank, so the moving
-    region maps onto itself wherever it sits. Wide open, those two values *are*
-    1 and 97, so the flagship patch is unchanged.
-    - Measured, window from partial 5: the whole-bank swing over a cycle goes
-      from 0.87 dB (fade keyed to the bank — a hole opening at the window's own
-      bottom edge once per cycle) to **0.00 dB**, with the low end 3.9 dB louder
-      because partials 1–4 are now static at full level instead of dragged
-      partway into the glide. Before, the shoulder reached ~10 partials below a
-      wide window's start, so no window position gave back a clean fundamental.
+    Two things that only work together: the one-partial shoulder, and the window
+    start and width snapping to whole partials on a `roll`-partial grid so ODD
+    ONLY lands on odd partials. Together they put every partial's window weight
+    at exactly **0 or 1** — a weight strictly between them is what breaks a
+    windowed wrap, since such a partial moves a fractional step and lands
+    nowhere. The ends fade keys to `[max(winStart,1), min(winEnd, kEndFade)]`
+    rather than to the bank, so the moving region maps onto itself wherever it
+    sits; wide open those two values *are* 1 and 97, so the flagship patch is
+    unchanged. Measured on a window from partial 5, the whole-bank swing over a
+    cycle is **0.00 dB** (0.87 dB keyed to the bank, where a hole opened at the
+    window's own bottom edge once per cycle) with the low end 3.9 dB louder.
     - The cost is a spectral notch: the lowest moving partial is silent by
       construction, so there is a `kEndFadeW`-wide dip between the static bottom
       and the glide. It is static in time — a gap, not a loop.
@@ -304,21 +303,16 @@ an ordinary two- or three-band patch sits 6–9 dB below the case being protecte
 option, but it means accepting that the all-up patch engages the soft clip,
 which changes what `clip_guard` asserts.
 
-Measured worst case over 37,050 patches: **peak 0.700 against the 0.85 knee**,
-at `cluster SPREAD f0=55 A=0.12 B=0.88 pos=0.50 win=0.75`. Up from 0.613 when
-knob 4 was unipolar: A=0.12 is now a large cluster collapsing UP, which the old
-map could not reach, and it is the hottest corner the panel has. Still inside
-`kHeadroom`'s stated worst case (~0.75), but the margin is 1.7 dB — check this
-number, not just pass/fail, if the collapse geometry changes again. Giving
-Cluster Shepard's one-partial window shoulder sent it to **1.168**, past the hard
-cap; that is the todo.md compensation bug, not the shoulder.
+Measured worst case over 22,875 patches: **peak 0.594 against the 0.85 knee**,
+at `cluster cfg2 f0=220 A=0.00 B=0.75 pos=0.75 win=1.00`. The hot corner is the
+collapse-UP side of knob 4 (A near 0) with a wide window. Still inside
+`kHeadroom`'s stated worst case (~0.75), and the margin is 3.1 dB — check this
+number, not just pass/fail, if the collapse geometry changes again.
 
 Which tilt is loudest depends on the compensation, so check rather than assume:
-uncompensated, dark is far worse (2.005 vs bright's 1.208), but once the Cluster
-compensation was re-derived per tilt the compensated worst case moved to
-**bright**. Both facts have been measured at different points in the same
-session and the naive reading ("brighter must be louder") was wrong the first
-time and right the second, for reasons that had nothing to do with brightness.
+uncompensated, dark is far worse (2.005 vs bright's 1.208), but compensated the
+worst case is **bright**. "Brighter must be louder" is not a safe reading in
+either direction.
 
 Cluster at high density is the loud exception: tilt and band envelope are
 sampled at the SHIFTED frequency, so collapsing the bank down-spectrum adds
@@ -334,8 +328,16 @@ Both closed forms are really over the interval the members end up occupying,
 collapsing up slides the same interval to the cluster's top, `a = 1+x−y`, where
 either tilt makes it quieter — miss that and the up side over-boosts by up to
 `(1+x)`. Both reduce to the plain forms at `a = 1`, and to 1 at density 0 where
-`y = x` and nothing has moved. Measured across the density knob: worst 2.4 dB
-collapsing down, 2.1 dB up, exactly 0.00 dB at the centre detent.
+`y = x` and nothing has moved.
+
+⚠️ **`norm` may only attenuate** (`min(1/√boost, 1)`). `boost < 1` is the
+collapse-UP direction, where the model asks for gain — several times unity at
+max cluster, which takes a wide window past the clip. The request is wrong for
+the partials outside the window in any case, since they never collapsed. Capping
+it is also what buys the one-partial window shoulder in Cluster: with the wide
+proportional taper the low partials were only partly collapsed, and narrowing it
+without the cap puts the sweep's worst peak at 1.157. Measured across the density
+knob with the cap: 0.4 dB collapsing up, exactly 0.00 dB at the centre detent.
 
 ⚠️ **Measure high density over seconds, not milliseconds.** A collapsed
 cluster's members sit `(1−d)·f0` apart and beat with a multi-second period, so a
@@ -346,14 +348,14 @@ reason; any new harness needs the same.
 ⚠️ **The compensation's closed form depends on the tilt exponent.** Integrating
 `r^-2a` across a collapsed cluster gives `ln(1+t)/t` at `a = ½` but `1/(1+t)` at
 `a = 1`, so each slope needs its own ratio and the two blend with the tilt morph.
-Changing the tilt and leaving `Log1pOverX` alone left the compensation solving a
-spectrum the engine no longer produced, and the density knob swung **6.4 dB**
-instead of 0.9. If the tilt law ever changes again, re-derive this — the failure
-is silent apart from that one test.
+If the tilt law ever changes, re-derive this: a compensation solving the wrong
+spectrum swings the density knob by several dB, and the failure is silent apart
+from that one test.
 
 **Output clip: linear below a 0.85 knee, parabolic to a hard cap at 1.15.**
-Below the knee the output stage is bit-exact; only Cluster crosses it, and only
-42 of 4380 test patches engage it at all.
+Below the knee the output stage is bit-exact, and as shipped nothing in the
+guard's sweep reaches the knee at all — the clip is insurance, not a stage the
+engine normally uses.
 
 Partials above Nyquist fade out over the top 5% rather than switching off; a
 band whose partials have all run off pulses its LED dimly (see below). At 48 kHz

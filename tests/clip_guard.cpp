@@ -1,7 +1,7 @@
 // Pass/fail guard on the Cluster collapse compensation.
 //
-// clip_sweep.cpp reports how hard the soft clip is working; this file asserts
-// it never works at all. Everything is measured at the firmware's block size,
+// Asserts the soft clip never works at all. Everything is measured at the
+// firmware's block size,
 // sample rate and master level, with the engine's pre-clip signal recovered by
 // inverting SoftClip.
 //

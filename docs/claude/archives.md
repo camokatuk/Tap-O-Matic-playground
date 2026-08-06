@@ -178,3 +178,51 @@ of pot 3 was disliked. ORBIT replaced them.
   → 0.335 for SUPER-WIDE. That is hard panning, not anti-phase — one channel
   carrying half the bank at full gain instead of all of it at 0.707. It is why
   the current anchors stay inside ±1 and `tests/slot_table.cpp` asserts it.
+## Cluster's window taper — the proportional shoulder
+
+Both modes tapered the window shoulder over `winWidth * 0.1` (floor 1 partial).
+Shepard was narrowed to exactly one partial first; Cluster kept the proportional
+one for a while because the levels had been tuned by ear against it, and because
+narrowing it sent the guard's worst peak to **1.157** against the 0.85 knee. The
+mechanism: a wide shoulder leaves the low partials only *partly* collapsed, and
+collapsing them fully is what let the compensation's collapse-UP branch ask for
+several times unity gain on partials the window never moved.
+
+Capping `norm` at unity removed that, and the shoulder is now one partial in both
+modes (0.594 worst peak). Intermediate widths were measured on the way and all
+failed without the cap: 5% → 0.915, 3% → 0.926, 2% → 0.901, one partial → 1.157.
+Taper width was never the free parameter; the boost was.
+
+## Cluster's fractional grid anchor
+
+The collapse target came off a grid anchored at `winStart`, which is fractional.
+At `m = 1` — knob 4's detent, where the mode is supposed to do nothing — that
+sent every partial to the grid point *below* it rather than to itself, so the
+density knob detuned the whole window by up to a full partial index, and the
+partials under the lower taper piled onto `winStart`. Invisible at position knob
+exactly 0 (`winStart` = 1.000 exactly), which is why it read as hardware-only:
+on the panel that knob is never exactly zero.
+
+Anchoring at `floor(winStart)` fixed it. Anchoring at the taper's foot
+(`floor(winStart - edge)`) also fixed it and was tried first — it pulls the
+partials under the taper into clusters of their own, down where the tilt makes
+them loud, and took the guard from 0.700 to **1.047**.
+
+## Shepard's phi ceiling at 1 partial/s
+
+The rate ceiling was briefly dropped from 10 partials/s to 1, on the reading that
+the illusion stops being one past roughly half a wrap per second. It was put back:
+the top of the travel is a usable zap effect, and the range is worth more than the
+purity of the percept up there.
+
+## Compensation weighted by in-window power — tried and reverted
+
+`norm` reaches every partial, including the ones outside the window that never
+collapsed (todo.md 5). The candidate fix weighted the boost by the share of the
+bank's POWER inside the window, `boostW = 1 + winPow*(boost - 1)`, with `winPow`
+from integrals of `r^-2a` over the window, morphed with the tilt like the boosts
+themselves. Exact at `winPow = 1` (window wide open, the case the compensation
+was built for), and it cut the 4.4 dB error on a static partial to 0.9 dB.
+
+Reverted because it makes Cluster **louder** whenever the window is partial, and
+Cluster's levels were tuned by ear against the current behaviour.

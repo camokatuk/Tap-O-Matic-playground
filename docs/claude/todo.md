@@ -68,29 +68,21 @@ audio bit-identical. So: hardware A/B, not a free edit.
 partial — including the ones outside the shaper window, which never collapsed and
 have nothing to compensate for.
 
-Measured (old engine, window from partial 5, 9 wide, max cluster): partial 1 sits
-outside the window and still loses **4.4 dB** when the density knob sweeps
-0 → 1. It has always erred quiet, which is why no guard caught it.
+Measured (window from partial 5, 9 wide, max cluster): partial 1 sits outside the
+window and still loses **4.4 dB** when the density knob sweeps 0 → 1. It errs
+quiet, which is why no guard catches it.
 
-It stops being harmless with the collapse-UP direction, where the compensation
-*boosts*: a wide window clearing the fundamental boosted that static fundamental
-by the collapse's full 5.5x, one partial reaching peak 1.17 against the 0.85
-knee. Only reachable today with the one-partial window shoulder, which is why
-that shoulder is gated to Shepard — the gate is a workaround for this, not a
-design preference.
+The loud half of this is closed: `norm` is now capped at unity, so the collapse-UP
+direction can no longer boost a static partial past the clip. What remains is the
+attenuation error above — audible as a window-dependent level sag, not a clipping
+risk. A candidate fix (weight the boost by the share of the bank's power inside
+the window) was tried and reverted; see `archives.md`.
 
-The fix that was tried and reverted: weight the boost by the share of the bank's
-POWER inside the window, `boostW = 1 + winPow*(boost - 1)`, with `winPow` from
-integrals of `r^-2a` over the window, morphed with the tilt like the boosts
-themselves. It is exact at `winPow = 1` (window wide open — the case the
-compensation was built for, so the headline patches are untouched), and it cut
-that 4.4 dB error to 0.9 dB. It was reverted because it makes Cluster **louder**
-whenever the window is partial, and Cluster's levels were tuned by ear against
-the current behaviour.
-
-Before landing it: run the clip sweep, and A/B a partial-window Cluster patch on
-hardware. The model holds total POWER flat; the guard measures PEAK, and those
-part company exactly when a cluster piles onto one frequency.
+Before landing anything here: run `./tests/run.sh` — `clip_guard` is the gate,
+and its exhaustive sweep is the thing that would catch a regression — then A/B a
+partial-window Cluster patch on hardware. The model holds total POWER flat; the
+guard measures PEAK, and those part company exactly when a cluster piles onto one
+frequency.
 
 ## 6. Shepard band-boundary tick — known, mitigated, watch it
 
@@ -100,25 +92,3 @@ ever comes back, the repro is: Shepard, slider 3 fully up and slider 4 fully
 down, window wide, and sweep knob 4 — partial 4 crosses the boundary at 4.16
 when phi ≈ 0.16.
 
-## 0. Cluster gain compensation — SHIPPED, parked as a clipping reminder
-
-A closed-form compensation ships in `UpdateBlock` (`norm`, folded into the
-per-band gains, never into `master`). Derived from control values ONLY — the
-density/partials/window geometry — so it has none of the amp-state → master
-feedback that made two earlier attempts throw hardware ~8 kHz artifacts
-(post-mortem in `archives.md`).
-
-Mechanism: a collapsed cluster's power is ~ln(1+t)/t under the 1/sqrt(r) tilt
-but ~1/(1+t) under 1/r, so each slope has its own compressed:spread ratio and
-the two blend with the tilt morph; `norm = 1/sqrt` of that holds RMS flat across
-the density knob. `Log1pOverX` is libm-free — the first version called `logf`
-per block and that burst was audible on hardware.
-
-**The closed form is tied to the tilt exponent.** Changing the tilt without
-re-deriving it left the compensation solving the old spectrum and the density
-knob swung 6.4 dB; it is now back to 0.9. If the tilt law changes again, redo the
-integral — nothing else catches it.
-
-Peak was the open worry here and it has now been measured: worst peak 0.497 over
-37,050 patches against the 0.85 knee, and the bright tilt is the tamer of the
-two. No headroom gap outstanding. Kept only as a pointer to the derivation.
