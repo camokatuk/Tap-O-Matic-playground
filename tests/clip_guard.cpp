@@ -328,13 +328,13 @@ int main()
         c.shapeA  = 1.f;
         c.shapeB  = 0.f;
         const Meas m = Run(osc, c);
-        // 0.5312 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
+        // 0.4806 measured with FOXTAIL_CLUSTER_NORM=0; at density 0 the
         // compensation is boost=1 and only FastRSqrt(1) = 0.9983 remains.
         // Re-measure whenever kHeadroom, kDarkBoost, the pan layout or the tilt
         // changes -- all of them move it, and it scales linearly with kHeadroom.
         // cfg 1 is ORBIT and dark, so it carries kDarkBoost too.
-        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.5312)", m.peak);
-        Check(std::fabs(m.peak - 0.5312f * 0.9983f) < 0.005f, buf);
+        std::snprintf(buf, sizeof buf, "density 0 untouched (peak %.4f, raw 0.4806)", m.peak);
+        Check(std::fabs(m.peak - 0.4806f * 0.9983f) < 0.005f, buf);
     }
     {
         foxtail::Controls c;

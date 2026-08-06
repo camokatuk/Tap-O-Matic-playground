@@ -62,36 +62,27 @@ in the render loop — roughly two instructions in the Shepard clone, which is t
 size of change `archives.md` records as bringing hardware artifacts back with the
 audio bit-identical. So: hardware A/B, not a free edit.
 
-## 5. Cluster's compensation sags in the middle of the window-start knob
+## 5. Cluster's compensation still over-cuts at the very bottom of the window
 
 **Settled, so that it is not relitigated:** the compensation is applied to the
-WHOLE spectrum, including partials the window never moved. That is deliberate —
-a compensation that only scaled the windowed partials would change the patch's
-tilt as the knob moved, which is a dishonest sound. It may only ever attenuate,
-too (`norm` is capped at unity): the point of the device is to make a few loud,
-not-very-useful patches quieter so everything else can be louder. Boosting a
-quiet patch back up is not its job.
+WHOLE spectrum as one scalar, including partials the window never moved. That is
+deliberate — a compensation that scaled only the windowed partials would change
+the patch's tilt as the knob moved, which is a dishonest sound. It may only ever
+attenuate, too (`norm` is capped at unity): the point of the device is to make a
+few loud, not-very-useful patches quieter so everything else can be louder.
+Boosting a quiet patch back up is not its job.
 
-What is open is the SIZE of the cut, which is keyed to `1/winStart`. Measured on
-a CW max cluster at full density, f0 = 110, window wide, sweeping the window
-START knob:
+`winPow` (control-maps.md) closed most of what was open here: cut applied vs cut
+actually needed to stay under the knee, on a CW max cluster sweeping the window
+start, went from 5–12 dB of over-cut to 0–4.6 dB, and the 6 dB sag in the middle
+of that knob is gone.
 
-| pos knob | level | cut applied |
-|---|---|---|
-| 0.00 | −20.1 dBFS | −18.1 dB |
-| 0.50 | −25.9 dBFS |  −9.7 dB |
-| 1.00 | −19.3 dBFS |  −0.1 dB |
-
-The raw level falls as the window rises (fewer partials collapse) and the cut
-shrinks alongside it, but they do not track: the patch sags ~6 dB in the middle
-of the knob. The closed form models the window as ONE cluster starting at
-`winStart`, where the reality is several clusters spread across it.
-
-Before landing anything here: run `./tests/run.sh` — `clip_guard` is the gate,
-and its exhaustive sweep is what would catch a regression — then A/B a
-partial-window Cluster patch on hardware. The model holds total POWER flat; the
-guard measures PEAK, and those part company exactly when a cluster piles onto one
-frequency. `./tools/headroom.sh` reports the level distribution.
+What remains is the bottom of the travel: at `pos = 0`, density 1, the cut is
+−18.1 dB where −13.5 would do — **4.6 dB over**. `winPow` is 1 there (the window
+IS the bank), so it cannot help; the residual is the closed form's own error,
+which models the window as one cluster rather than several. Worth revisiting only
+if that corner sounds too quiet — it is the genuinely loud patch, so erring low
+there is cheap.
 
 ## 6. Shepard band-boundary tick — known, mitigated, watch it
 

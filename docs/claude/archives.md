@@ -215,7 +215,7 @@ the illusion stops being one past roughly half a wrap per second. It was put bac
 the top of the travel is a usable zap effect, and the range is worth more than the
 purity of the percept up there.
 
-## Compensation weighted by in-window power — tried and reverted
+## Compensation weighted by in-window power — reverted once, now shipped
 
 `norm` reaches every partial, including the ones outside the window that never
 collapsed (todo.md 5). The candidate fix weighted the boost by the share of the
@@ -224,5 +224,8 @@ from integrals of `r^-2a` over the window, morphed with the tilt like the boosts
 themselves. Exact at `winPow = 1` (window wide open, the case the compensation
 was built for), and it cut the 4.4 dB error on a static partial to 0.9 dB.
 
-Reverted because it makes Cluster **louder** whenever the window is partial, and
-Cluster's levels were tuned by ear against the current behaviour.
+Reverted at the time because it makes Cluster **louder** whenever the window is
+partial, and Cluster's levels were tuned by ear against the old behaviour. It
+shipped later, when that turned out to be the wanted behaviour: measurement
+showed the compensation cutting up to 12 dB on patches whose raw peak was already
+under the knee. See control-maps.md for the form that landed.

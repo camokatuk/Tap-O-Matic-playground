@@ -295,8 +295,8 @@ normalisation were both rejected (`archives.md`). `kHeadroom` rides in the
 per-band gain, not the partial loop — it is a constant and everything it scales
 flows through that gain anyway.
 
-`kHeadroom` is **0.42**, sized so the loudest patch the panel can reach lands at
-0.832 against the 0.85 knee — 0.2 dB spare. There is deliberately no room left:
+`kHeadroom` is **0.38**, sized so the loudest patch the panel can reach lands at
+0.829 against the 0.85 knee — 0.2 dB spare. There is deliberately no room left:
 anything that makes a patch louder now trips `clip_guard`.
 
 `kDarkBoost` (**1.41**, +3 dB) rides on top of `tiltNorm`, faded out across the
@@ -306,7 +306,7 @@ headroom bright does not. Spending it makes dark ~2.5 dB louder than bright in
 RMS: a deliberate level step on GATE, taken because the extra lands in the low
 end. `tiltNorm` alone would keep the two matched.
 
-Together these lifted the median patch from **−20.9 to −15.1 dBFS**. Note what
+Together these lifted the median patch from **−20.9 to −15.9 dBFS**. Note what
 the budget is sized against: all eight sliders at maximum. A bank with random
 phases sums as √N, so an ordinary two- or three-band patch still sits 4–5 dB
 below the case being protected. Going further means accepting that the all-up
@@ -349,6 +349,18 @@ it is also what buys the one-partial window shoulder in Cluster: with the wide
 proportional taper the low partials were only partly collapsed, and narrowing it
 without the cap puts the sweep's worst peak at 1.157. Measured across the density
 knob with the cap: 0.4 dB collapsing up, exactly 0.00 dB at the centre detent.
+
+⚠️ **`norm` is scaled by the share of the bank's POWER inside the window**
+(`winPow`). The closed form models the whole bank as one cluster starting at
+`winStart`; when the window sits high, the static partials below it carry most of
+the power and nothing needs taming, but the model cut anyway — measured up to
+**12 dB of cut where zero was needed**, and a 6 dB sag in the middle of the
+window-start knob. `winPow` is integrals of `r^-2a` over `[winStart, winEnd]`
+against the whole bank (`1/lo − 1/hi` at `a = 1`, `ln(hi/lo)` at `a = ½`, blended
+with the tilt like the boosts). It is one scalar on the whole spectrum, so a
+patch's tilt is untouched — only how hard the cut bites. After it, over-cut on
+that sweep is 0–4.6 dB and the level across the window-start knob is flat within
+0.8 dB. Costs 71 instructions per block and nothing in the render loop.
 
 ⚠️ **Measure high density over seconds, not milliseconds.** A collapsed
 cluster's members sit `(1−d)·f0` apart and beat with a multi-second period, so a

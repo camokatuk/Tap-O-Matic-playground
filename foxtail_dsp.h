@@ -482,7 +482,7 @@ class FoxTailOsc
     // that makes any patch louder now trips clip_guard, which is the intent.
     // Going further means deciding the loudest patch may saturate; tools/
     // headroom.sh reports what that would cost and which patches pay it.
-    static constexpr float kHeadroom = 0.42f;
+    static constexpr float kHeadroom = 0.38f;
 
     // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
     static constexpr float kDensityMax  = 0.995f;
@@ -883,7 +883,21 @@ class FoxTailOsc
         const float a = mUp ? 1.f + x - y : 1.f;
         const float boostDark   = (1.f + x) / (a * (a + y));
         const float boostBright = Log1pOverX(y / a) / (a * Log1pOverX(x));
-        const float boost = boostDark + tiltSmooth_ * (boostBright - boostDark);
+        float boost = boostDark + tiltSmooth_ * (boostBright - boostDark);
+        // Scale by the share of the bank's POWER that is inside the window. The
+        // boost above models the whole bank as one cluster starting at winStart;
+        // when the window sits high, the static partials below it carry most of
+        // the power and nothing needs taming, but the model cut up to 12 dB
+        // anyway. Still one scalar on the whole spectrum, so the patch's tilt is
+        // untouched — only how hard the cut bites. Integrals of r^-2a over
+        // [lo, hi] against the bank: 1/lo - 1/hi at a = 1, ln(hi/lo) at a = 1/2,
+        // blended with the tilt like the boosts themselves.
+        const float pLo   = std::fmaxf(winStart, 1.f);
+        const float pHi   = std::fmaxf(std::fminf(winEnd, nf), pLo + 1e-3f);
+        const float shDark   = (1.f / pLo - 1.f / pHi) / (1.f - 1.f / nf);
+        const float shBright = (FastLog2(pHi) - FastLog2(pLo)) / logN;
+        const float winPow   = Clamp01(shDark + tiltSmooth_ * (shBright - shDark));
+        boost = 1.f + winPow * (boost - 1.f);
         // Smoothed at block rate like the band gains: knob 5 moves this ~2.6x
         // faster than Shepard's duck moves winGain, and a gain stepping at
         // block rate is an AM sideband at the callback rate (whinebug.md).
