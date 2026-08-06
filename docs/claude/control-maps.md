@@ -20,7 +20,7 @@ hardware-verified unless marked open.
 | Knob 1 (was TIME) | pitch, 20–2000 Hz log; its jack is calibrated V/oct | yes |
 | Knob 2 (was SPREAD) | shaper window start | yes |
 | Knob 3 (was FEEDBACK) | shaper window width | yes |
-| Knob 4 (was HPF) | **centre-neutral, both modes.** cluster: partials per cluster, CW collapsing onto the cluster's low end and CCW onto its high end / shepard: glissando rate, CW rising | yes, but see below |
+| Knob 4 (was HPF) | **centre-neutral, both modes.** cluster: partials per cluster, CCW collapsing onto the cluster's low end and CW onto its high end / shepard: glissando rate, CW rising | yes, but see below |
 | Knob 5 (was LPF) | cluster: density / shepard: window duck (CCW = unity) | yes |
 | Switch 1 (left) | down = CLUSTER, up = SHEPARD | — |
 | Switch 2 (right) | spectral tilt: up = BRIGHT (1/√r), down = DARK (1/r) | — |
@@ -130,9 +130,9 @@ supposed to leave alone.
   cluster). Density is capped at 0.995; 0.9–1 is the useful beating zone.
   Knob 4 is bipolar about a dead centre where m = 1 and nothing shifts, matching
   Shepard so the panel means one thing: the **side** picks which end of a cluster
-  its members land on. CW is the cluster's low end, a comb at multiples of m; CCW
-  is its high end — the same comb offset by m−1, so it is no longer aligned to f0
-  and rings instead of thickening. The offset is clamped to the window, so a
+  its members land on, low on the left to match the panel: CCW is the cluster's
+  low end, a comb at multiples of m; CW is its high end — the same comb offset by
+  m−1, so it is no longer aligned to f0 and rings instead of thickening. The offset is clamped to the window, so a
   single cluster wider than the window piles at the window's top edge instead of
   being shoved past Nyquist. Both anchors are one per-block add folded into the
   base the partial loop already sums, so the second direction costs the loop

@@ -84,24 +84,24 @@ struct Witness
 // patches that slam the clip on the uncompensated engine.
 // rawPeak re-measured after the tilt change (the sawtooth slope is ~5 dB
 // quieter than equal-power-per-octave, so every one of these moved down).
-// A=0.95 now beats A=1.00 as the worst case; it replaces the old pos=0.2
+// A=0.05 now beats A=1.00 as the worst case; it replaces the old pos=0.2
 // witness, which fell to 0.43 and had stopped proving anything.
-// A is in KNOB travel, and knob 4 became centre-neutral: 0.5 is m=1, and the
-// old A=0.88/0.75 spectra now sit at 0.95/0.89. Values below 0.5 are the same
-// cluster sizes collapsing onto the cluster's top instead, which lands the pile
-// where both tilts are quieter — the grid sweep covers that side, but it does
-// not clip, so it earns no witness.
+// A is in KNOB travel, and knob 4 is centre-neutral: 0.5 is m=1. Below 0.5 the
+// cluster collapses onto its LOW end, which is the loud direction and the one
+// worth a witness; above 0.5 the same cluster sizes collapse onto the top, which
+// lands the pile where both tilts are quieter. The grid sweep covers that side,
+// but it does not clip, so it earns no witness.
 const Witness kWitnesses[] = {
-    {"spread  A=0.95 B=1.00 win=1.0 pos=0.0", 1, 0.95f, 1.00f, 0.f, 1.f, 220.f, 2.230f},
-    {"centred A=0.95 B=1.00 win=1.0 pos=0.0", 0, 0.95f, 1.00f, 0.f, 1.f, 220.f, 2.212f},
-    {"centred A=1.00 B=1.00 win=1.0 pos=0.0", 0, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.925f},
-    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0", 1, 1.00f, 1.00f, 0.f, 1.f, 220.f, 2.892f},
-    {"spread  A=1.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 1.00f, 1.00f, 0.f, 1.f, 55.f, 2.510f},
-    {"centred A=0.89 B=1.00 win=0.8 pos=0.0", 0, 0.89f, 1.00f, 0.f, 0.8f, 220.f, 1.629f},
+    {"spread  A=0.05 B=1.00 win=1.0 pos=0.0", 1, 0.05f, 1.00f, 0.f, 1.f, 220.f, 2.230f},
+    {"centred A=0.05 B=1.00 win=1.0 pos=0.0", 0, 0.05f, 1.00f, 0.f, 1.f, 220.f, 2.212f},
+    {"centred A=0.00 B=1.00 win=1.0 pos=0.0", 0, 0.00f, 1.00f, 0.f, 1.f, 220.f, 2.925f},
+    {"spread  A=0.00 B=1.00 win=1.0 pos=0.0", 1, 0.00f, 1.00f, 0.f, 1.f, 220.f, 2.892f},
+    {"spread  A=0.00 B=1.00 win=1.0 pos=0.0 f0=55", 1, 0.00f, 1.00f, 0.f, 1.f, 55.f, 2.510f},
+    {"centred A=0.11 B=1.00 win=0.8 pos=0.0", 0, 0.11f, 1.00f, 0.f, 0.8f, 220.f, 1.629f},
     // Bright tilt. Lower than dark UNCOMPENSATED, but once the Cluster
     // compensation was re-derived per tilt the compensated worst case moved to
     // bright -- so this is not decoration, it is the loud side now.
-    {"bright  A=1.00 B=1.00 win=1.0 pos=0.0 f0=880", 2, 1.00f, 1.00f, 0.f, 1.f, 880.f, 1.810f},
+    {"bright  A=0.00 B=1.00 win=1.0 pos=0.0 f0=880", 2, 0.00f, 1.00f, 0.f, 1.f, 880.f, 1.810f},
 };
 
 foxtail::Controls WitnessControls(const Witness& w)
@@ -272,7 +272,10 @@ int main()
 
     // --- 3. Loudness across the density knob ----------------------------------
     // The point of compensating rather than just turning Cluster down: sweeping
-    // knob 5 must not change how loud the patch is.
+    // knob 5 must not change how loud the patch is. Knob 4 CCW, the collapse-DOWN
+    // side: that is the direction the compensation exists for. Collapsing UP is
+    // deliberately allowed to fade out (`norm` never boosts), so the same sweep
+    // on the CW side legitimately loses ~20 dB.
     std::printf("\nRMS across the density knob (all-up, f0=220, full window):\n");
     float lo = 1e9f, hi = 0.f;
     for (int i = 0; i <= 8; ++i)
@@ -282,7 +285,7 @@ int main()
         c.mode    = foxtail::kModeCluster;
         c.pitchHz = 220.f;
         c.window  = 1.f;
-        c.shapeA  = 1.f;
+        c.shapeA  = 0.f;
         c.shapeB  = (float)i / 8.f;
         const Meas m = Run(osc, c);
         lo = std::min(lo, m.rms);
@@ -311,7 +314,7 @@ int main()
         c.shapeB      = 1.f;
         const Meas m1 = Run(osc, c);
         std::snprintf(buf, sizeof buf,
-                      "A=0: density knob inert (peak %.4f vs %.4f)", m0.peak, m1.peak);
+                      "A=centre: density knob inert (peak %.4f vs %.4f)", m0.peak, m1.peak);
         Check(std::fabs(m0.peak - m1.peak) < 0.005f, buf);
     }
 

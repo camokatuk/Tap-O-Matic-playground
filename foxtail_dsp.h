@@ -824,13 +824,14 @@ class FoxTailOsc
         // the latter promotes to double and calls libm once per block.
         //
         // Bipolar from the dead centre, where m = 1 and nothing shifts. The SIDE
-        // picks which end of a cluster its members collapse onto: CW the lowest,
-        // giving a comb at multiples of m, CCW the highest, giving that comb
-        // offset — the same spacing but no longer aligned to f0, so it rings
-        // instead of thickening. Full range either way; the map is exponential,
-        // so half the travel costs steepness, not reach.
+        // picks which end of a cluster its members collapse onto, low on the left
+        // to match the panel: CCW the lowest, giving a comb at multiples of m,
+        // CW the highest, giving that comb offset — the same spacing but no
+        // longer aligned to f0, so it rings instead of thickening. Full range
+        // either way; the map is exponential, so half the travel costs
+        // steepness, not reach.
         const float mF   = std::exp2(std::fabs(shapeAT) * (logN + 0.5f));
-        const bool  mUp  = shapeAT < 0.f;
+        const bool  mUp  = shapeAT > 0.f;
         const float mLo  = std::floor(mF);
         const float mFrac = mF - mLo;
         const float mHi  = mLo + 1.f;
