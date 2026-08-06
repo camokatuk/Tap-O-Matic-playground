@@ -42,7 +42,27 @@ That is a code reading, not a test. Worth actually trying `kF0Min = 0.01f` and
 listening: a 96-partial bank at LFO rates is potentially a good drone/texture
 mode, but nothing has been verified by ear.
 
-## 4. Cluster's gain compensation scales partials the window never moved
+## 4. OPTIONAL — Shepard's pan roll moves the static partials too
+
+A wrap advances `phiRot_`, which rotates the whole `panPartial_` table, so every
+partial takes its neighbour's pan slot — including the ones outside the window,
+which never moved. Measured on a static partial (ratio fixed at 3.000, spread
+0.15): its pan cycles through all 8 slots, one step per wrap, repeating every 8.
+
+For partials INSIDE the window the roll is load-bearing — remove it and the same
+patch goes from 5.7x the median sample step to 17.5x, because a frequency
+changing hands needs its image to follow. Only the static ones are wrong.
+
+**Deliberately left in: it sounds good.** Image movement that used to require pot
+3 past the ORBIT knot (`kPanRotAnchor`, 0.5+) now starts as soon as the slots are
+non-coincident, driven by the wrap instead of by the pot.
+
+Fixing it needs a per-partial choice between a rolled and an unrolled pan table
+in the render loop — roughly two instructions in the Shepard clone, which is the
+size of change `archives.md` records as bringing hardware artifacts back with the
+audio bit-identical. So: hardware A/B, not a free edit.
+
+## 5. Cluster's gain compensation scales partials the window never moved
 
 `norm` in `UpdateBlock` is folded into the per-band gains, so it reaches **every**
 partial — including the ones outside the shaper window, which never collapsed and
@@ -72,7 +92,7 @@ Before landing it: run the clip sweep, and A/B a partial-window Cluster patch on
 hardware. The model holds total POWER flat; the guard measures PEAK, and those
 part company exactly when a cluster piles onto one frequency.
 
-## 5. Shepard band-boundary tick — known, mitigated, watch it
+## 6. Shepard band-boundary tick — known, mitigated, watch it
 
 In Shepard a partial crossing a band boundary stepped in level, which ticked
 once per crossing. Mitigated by the Shepard-only crossfade (`kXfadeW`). If it

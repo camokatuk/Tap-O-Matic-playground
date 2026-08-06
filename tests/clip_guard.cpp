@@ -17,8 +17,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -72,6 +74,63 @@ Meas Run(foxtail::FoxTailOsc& osc, foxtail::Controls c, float seconds = 0.4f)
     m.peak = peak / kAtten;
     m.rms  = (float)(std::sqrt(s2 / (2.0 * measure * kBlock)) / kAtten);
     return m;
+}
+
+// Sweeps are built as a patch list and rendered across cores. Run() re-Inits
+// the oscillator per patch, so a patch's result does not depend on what ran
+// before it and sharding cannot change an answer.
+struct Patch
+{
+    foxtail::Controls c;
+    std::string       name;
+    float             seconds;
+};
+
+struct Worst
+{
+    float  peak = 0.f;
+    float  rms  = 0.f;
+    size_t idx  = (size_t)-1;
+};
+
+void RenderRange(const std::vector<Patch>& patches, size_t lo, size_t hi, Worst* out)
+{
+    // Heap, not stack: FoxTailOsc is 68 KB, past a default thread stack.
+    std::unique_ptr<foxtail::FoxTailOsc> osc(new foxtail::FoxTailOsc);
+    for (size_t i = lo; i < hi; ++i)
+    {
+        const Meas m = Run(*osc, patches[i].c, patches[i].seconds);
+        if (m.peak > out->peak)
+        {
+            out->peak = m.peak;
+            out->rms  = m.rms;
+            out->idx  = i;
+        }
+    }
+}
+
+Worst RenderAll(const std::vector<Patch>& patches)
+{
+    if (patches.empty()) return Worst();
+
+    size_t n = std::thread::hardware_concurrency();
+    if (n == 0) n = 1;
+    if (n > patches.size()) n = patches.size();
+
+    std::vector<Worst>       shard(n);
+    std::vector<std::thread> threads;
+    threads.reserve(n);
+    for (size_t t = 0; t < n; ++t)
+        threads.emplace_back(RenderRange, std::cref(patches), patches.size() * t / n,
+                             patches.size() * (t + 1) / n, &shard[t]);
+    for (std::thread& t : threads) t.join();
+
+    Worst best;
+    for (const Worst& s : shard) // ties resolve to the lowest index, so the
+        if (s.peak > best.peak   // reported patch does not depend on the shard
+            || (s.peak == best.peak && s.idx < best.idx)) // count
+            best = s;
+    return best;
 }
 
 // All eight bands up, fully filled. cfg 0 (no spread, dark tilt) is the loudest
@@ -173,9 +232,7 @@ int main()
     // Grid over the four Cluster shaper controls plus the loudest slider
     // configurations, then random patches for the corners a grid misses.
     std::printf("\nexhaustive sweep:\n");
-    float       worstPeak = 0.f;
-    std::string worstName;
-    int         patches = 0;
+    std::vector<Patch> sweep;
 
     const float f0s[] = {55.f, 220.f, 880.f};
     for (int mode = 0; mode < 2; ++mode)
@@ -183,77 +240,78 @@ int main()
             for (float f0 : f0s)
                 for (int ia = 0; ia <= 8; ++ia)
                     for (int ib = 0; ib <= 8; ++ib)
+                    {
+                        // Shepard reads shapeB as a plain attenuation of the
+                        // windowed partials (winGain = 1 - shapeB), so only the
+                        // ends of its travel can be the loud case.
+                        if (mode == foxtail::kModeShepard && ib != 0 && ib != 8)
+                            continue;
                         for (int ip = 0; ip <= 4; ++ip)
                             for (int iw = 0; iw <= 4; ++iw)
                             {
-                                foxtail::Controls c;
-                                SetSliders(c, cfg);
-                                c.mode     = mode;
-                                c.pitchHz  = f0;
-                                c.shapeA   = (float)ia / 8.f;
-                                c.shapeB   = (float)ib / 8.f;
-                                c.position = (float)ip / 4.f;
-                                c.window   = (float)iw / 4.f;
-                                const Meas m = Run(osc, c, 0.2f);
-                                ++patches;
-                                if (m.peak > worstPeak)
-                                {
-                                    worstPeak = m.peak;
-                                    char buf[160];
-                                    std::snprintf(buf, sizeof buf,
-                                                  "%s cfg%d f0=%g A=%.2f B=%.2f pos=%.2f win=%.2f",
-                                                  mode ? "shepard" : "cluster", cfg, f0,
-                                                  c.shapeA, c.shapeB, c.position, c.window);
-                                    worstName = buf;
-                                }
+                                Patch p;
+                                SetSliders(p.c, cfg);
+                                p.c.mode     = mode;
+                                p.c.pitchHz  = f0;
+                                p.c.shapeA   = (float)ia / 8.f;
+                                p.c.shapeB   = (float)ib / 8.f;
+                                p.c.position = (float)ip / 4.f;
+                                p.c.window   = (float)iw / 4.f;
+                                p.seconds    = 0.2f;
+                                char buf2[160];
+                                std::snprintf(buf2, sizeof buf2,
+                                              "%s cfg%d f0=%g A=%.2f B=%.2f pos=%.2f win=%.2f",
+                                              mode ? "shepard" : "cluster", cfg, f0,
+                                              p.c.shapeA, p.c.shapeB, p.c.position,
+                                              p.c.window);
+                                p.name = buf2;
+                                sweep.push_back(p);
                             }
+                    }
 
     std::mt19937                          rng(20260803);
     std::uniform_real_distribution<float> uni(0.f, 1.f);
     for (int i = 0; i < 600; ++i)
     {
-        foxtail::Controls c;
+        Patch p;
         for (int b = 0; b < foxtail::kNumBands; ++b)
         {
-            c.bandGain[b] = uni(rng);
-            c.bandShape[b] = uni(rng);
+            p.c.bandGain[b] = uni(rng);
+            p.c.bandShape[b] = uni(rng);
         }
-        c.tilt     = uni(rng);
-        c.bandShift = uni(rng);
-        c.spread   = uni(rng);
-        c.inharm   = uni(rng);
-        c.mode     = uni(rng) < 0.5f ? 0 : 1;
-        c.pitchHz  = 30.f * std::exp2(uni(rng) * 6.f);
-        c.position = uni(rng);
-        c.window   = uni(rng);
-        c.shapeA   = uni(rng);
-        c.shapeB   = uni(rng);
-        c.parity   = uni(rng) < 0.5f ? 0.f : 1.f;
-        const Meas m = Run(osc, c, 0.2f);
-        ++patches;
-        if (m.peak > worstPeak)
-        {
-            worstPeak = m.peak;
-            char buf[160];
-            std::snprintf(buf, sizeof buf, "rand#%d %s A=%.2f B=%.2f", i,
-                          c.mode ? "shepard" : "cluster", c.shapeA, c.shapeB);
-            worstName = buf;
-        }
+        p.c.tilt     = uni(rng);
+        p.c.bandShift = uni(rng);
+        p.c.spread   = uni(rng);
+        p.c.inharm   = uni(rng);
+        p.c.mode     = uni(rng) < 0.5f ? 0 : 1;
+        p.c.pitchHz  = 30.f * std::exp2(uni(rng) * 6.f);
+        p.c.position = uni(rng);
+        p.c.window   = uni(rng);
+        p.c.shapeA   = uni(rng);
+        p.c.shapeB   = uni(rng);
+        p.c.parity   = uni(rng) < 0.5f ? 0.f : 1.f;
+        p.seconds    = 0.2f;
+        char buf2[160];
+        std::snprintf(buf2, sizeof buf2, "rand#%d %s A=%.2f B=%.2f", i,
+                      p.c.mode ? "shepard" : "cluster", p.c.shapeA, p.c.shapeB);
+        p.name = buf2;
+        sweep.push_back(p);
     }
 
+    const Worst worst = RenderAll(sweep);
+
     char buf[224];
-    std::snprintf(buf, sizeof buf, "%d patches, worst peak %.3f (%s)", patches,
-                  worstPeak, worstName.c_str());
-    Check(worstPeak < knee, buf);
+    std::snprintf(buf, sizeof buf, "%zu patches, worst peak %.3f (%s)", sweep.size(),
+                  worst.peak, sweep[worst.idx].name.c_str());
+    Check(worst.peak < knee, buf);
 
     // --- 2b. High density, with a window long enough to see the beat ----------
     // A collapsed cluster's members sit (1-d)*f0 apart, so at d = 0.995 and
     // f0 = 55 they beat with a ~3.6 s period. The 0.2 s sweep above measures a
     // fraction of one cycle and reports a peak that is metres below the real
     // one, which is why this corner reads clean while hardware clips.
-    std::printf("\nhigh density, %.0f s window:\n", 8.0);
-    float worstLong = 0.f, worstCrest = 0.f;
-    std::string longName;
+    std::printf("\nhigh density, several beat periods:\n");
+    std::vector<Patch> longRun;
     {
         const float f0s2[] = {55.f, 220.f};
         const float Bs[]   = {0.90f, 0.95f, 0.99f, 1.00f};
@@ -263,30 +321,29 @@ int main()
                     for (int ip = 0; ip <= 2; ++ip)
                         for (int iw = 2; iw <= 4; ++iw)
                         {
-                            foxtail::Controls c;
-                            SetSliders(c, 2); // whole bank in one channel
-                            c.mode     = foxtail::kModeCluster;
-                            c.pitchHz  = f0;
-                            c.shapeA   = (float)ia / 8.f;
-                            c.shapeB   = B;
-                            c.position = (float)ip / 4.f;
-                            c.window   = (float)iw / 4.f;
-                            const Meas m = Run(osc, c, 8.f);
-                            if (m.peak > worstLong)
-                            {
-                                worstLong  = m.peak;
-                                worstCrest = m.peak / m.rms;
-                                char b2[160];
-                                std::snprintf(b2, sizeof b2,
-                                              "f0=%g A=%.2f B=%.2f pos=%.2f win=%.2f", f0,
-                                              c.shapeA, B, c.position, c.window);
-                                longName = b2;
-                            }
+                            Patch p;
+                            SetSliders(p.c, 2); // whole bank in one channel
+                            p.c.mode     = foxtail::kModeCluster;
+                            p.c.pitchHz  = f0;
+                            p.c.shapeA   = (float)ia / 8.f;
+                            p.c.shapeB   = B;
+                            p.c.position = (float)ip / 4.f;
+                            p.c.window   = (float)iw / 4.f;
+                            // The beat period goes as 1/f0, so the window that
+                            // covers it does too.
+                            p.seconds    = f0 <= 100.f ? 8.f : 3.f;
+                            char b2[160];
+                            std::snprintf(b2, sizeof b2,
+                                          "f0=%g A=%.2f B=%.2f pos=%.2f win=%.2f", f0,
+                                          p.c.shapeA, B, p.c.position, p.c.window);
+                            p.name = b2;
+                            longRun.push_back(p);
                         }
     }
-    std::snprintf(buf, sizeof buf, "worst peak %.3f, crest %.1f (%s)", worstLong, worstCrest,
-                  longName.c_str());
-    Check(worstLong < knee, buf);
+    const Worst wLong = RenderAll(longRun);
+    std::snprintf(buf, sizeof buf, "worst peak %.3f, crest %.1f (%s)", wLong.peak,
+                  wLong.peak / wLong.rms, longRun[wLong.idx].name.c_str());
+    Check(wLong.peak < knee, buf);
 
     // --- 3. Loudness across the density knob ----------------------------------
     // The point of compensating rather than just turning Cluster down: sweeping

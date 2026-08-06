@@ -487,7 +487,8 @@ class FoxTailOsc
     static constexpr float kHeadroom = 0.30f;
 
     // Past ~0.995 the beat periods outlast any note; exact 1.0 buys nothing.
-    static constexpr float kDensityMax = 0.995f;
+    static constexpr float kDensityMax  = 0.995f;
+    static constexpr float kDensityDead = 0.02f; // bottom of knob 5, Cluster
 
     // Stereo spread is quantised to kSlots pan positions across the field, built
     // once per block. The ear cannot place a single partial finely enough to
@@ -813,7 +814,15 @@ class FoxTailOsc
         // is the whole bank, so Shepard sounded "dead" at the exact physical
         // knob positions where Cluster (knob 5 = density) sounded fine.
         const float winGain   = shepard ? 1.f - shapeB : 1.f;
-        const float density   = std::fminf(shapeB, kDensityMax);
+        // Deadzone at the bottom, rescaled so the knob still reaches full: the
+        // shift is density * (m - 1) partials, so at a wide cluster a knob
+        // leaking half a percent (pot end, stale CV null — knobPlusCv clamps at
+        // 0, which rectifies noise into a positive bias) already detunes the
+        // bank. Cluster only; Shepard reads shapeB raw, where the same end is
+        // unity gain.
+        const float density   = std::fminf(
+            std::fmaxf((shapeB - kDensityDead) * (1.f / (1.f - kDensityDead)), 0.f),
+            kDensityMax);
         // Partials per cluster: soft-step, integer part sets the grouping and the
         // fraction crossfades between groupings. Ceiling is half an octave past
         // kNumPartials so the knob can reach a single cluster. logN, not log2():
@@ -858,7 +867,6 @@ class FoxTailOsc
         // to, so collapsing upward costs the loop nothing.
         const float oLo   = mUp ? std::fminf(mLo - 1.f, nWin) : 0.f;
         const float oHi   = mUp ? std::fminf(mHi - 1.f, nWin) : 0.f;
-        const float clusterBase = winStart + oLo + (oHi - oLo) * mFrac;
 
         tiltSmooth_ += (Clamp01(c.tilt) - tiltSmooth_) * smoothCoefBlk_;
         tiltInv_ = 1.f - tiltSmooth_;
@@ -885,7 +893,14 @@ class FoxTailOsc
         // Smoothed at block rate like the band gains: knob 5 moves this ~2.6x
         // faster than Shepard's duck moves winGain, and a gain stepping at
         // block rate is an AM sideband at the callback rate (whinebug.md).
-        const float norm = (shepard || !FOXTAIL_CLUSTER_NORM) ? 1.f : FastRSqrt(boost);
+        // Attenuate only. boost < 1 is the collapse-UP direction, where the model
+        // says the pile moved somewhere quiet and asks for gain — and it asks for
+        // several times unity at max cluster, which puts the wide window past the
+        // clip (todo.md 5). It reaches partials the window never moved, so the
+        // request is wrong there anyway.
+        const float norm = (shepard || !FOXTAIL_CLUSTER_NORM)
+                               ? 1.f
+                               : std::fminf(FastRSqrt(boost), 1.f);
         // Level compensation for the tilt morph, riding into the band gains
         // beside `norm` for the same reason: both are per-block values the
         // partial loop already multiplies in. Summed over the bank, equal power
@@ -1015,24 +1030,28 @@ class FoxTailOsc
         // fully shifted. Inside, a full-width window left the top ~9 partials
         // stranded near Nyquist.
         //
-        // Shepard narrows it to exactly one partial. One spacing is all the
-        // anti-click needs, and proportional to the WIDTH it reached ~10 partials
-        // below a wide window's start: no window position gave back a static,
-        // full-level fundamental, because the fundamental was always partway into
-        // the glide — ducked and tens of cents sharp. It also has to be one for
-        // the snap above to land every window weight on 0 or 1.
-        //
-        // Cluster keeps the proportional taper. Not because it would not benefit
-        // from a predictable edge, but because it was tuned by ear against this
-        // one: a sharp edge puts every low partial fully into the collapse, and
-        // the gain compensation (which reaches partials the window never moved)
-        // then over-boosts them past the clip. That is a real, pre-existing bug —
-        // see todo.md — and fixing it is its own decision, not this one's.
-        const float edge    = shepard ? kWinEdge
-                                      : std::fmaxf(winWidth * 0.1f, kWinEdge);
+        // Exactly one partial wide, both modes. One spacing is all the anti-click
+        // needs, and proportional to the WIDTH it reached ~10 partials below a
+        // wide window's start: no window position gave back a static, full-level
+        // fundamental. In Shepard that fundamental was ducked and tens of cents
+        // sharp; in Cluster the density knob dragged it toward winStart even at
+        // knob 4's detent, where nothing is supposed to move. Shepard also needs
+        // it at one for the snap above to land every window weight on 0 or 1.
+        // Narrowing it only clears the clip guard with the boost capped below.
+        const float edge    = kWinEdge;
         const float invEdge = 1.f / edge;
         const float loEdge  = winStart - edge;
         const float hiEdge  = winEnd + edge;
+
+        // Cluster's grid anchor: the window start as an INTEGER partial. Off a
+        // fractional anchor, m = 1 lands a partial on the grid point below it
+        // instead of on itself, so the density knob detuned the whole window at
+        // knob 4's detent. Also what puts a collapsed cluster on exact multiples
+        // of m. Not the taper's foot: anchoring below winStart pulls the partials
+        // under the taper into clusters of their own, and they are loud enough
+        // down there to push the clip guard past its knee.
+        const float p0 = std::fmaxf(1.f, std::floor(winStart));
+        const float clusterBase = p0 + oLo + (oHi - oLo) * mFrac;
 
         for (int k = 0; k < kNumPartials; ++k)
         {
@@ -1050,7 +1069,7 @@ class FoxTailOsc
             }
             else
             {
-                const float rel = std::fmaxf(idx - winStart, 0.f);
+                const float rel = std::fmaxf(idx - p0, 0.f);
                 const float cLo = ClusterStart(rel, mLo, invLo);
                 const float cHi = ClusterStart(rel, mHi, invHi);
                 const float s   = clusterBase + cLo + (cHi - cLo) * mFrac;
