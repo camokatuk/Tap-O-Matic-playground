@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fox Tail — user manual</title>
+<style>
+:root{
+  --bg:#faf7f4; --fg:#1c1a18; --muted:#6b635c; --rule:#e0d8d0;
+  --accent:#e0714a; --accent2:#3d7ea6; --accent3:#7a9e5a; --warn:#b8752a;
+  --card:#fff; --code:#f2ece7;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#16140f; --fg:#ece7e1; --muted:#9d938a; --rule:#332e28;
+         --accent:#f08a5f; --accent2:#6fb2d8; --accent3:#9fc47a; --warn:#e0a75c;
+         --card:#1e1b16; --code:#241f1a; }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;}
+.wrap{max-width:900px;margin:0 auto;padding:2rem 1.25rem 6rem}
+h1{font-size:2.4rem;line-height:1.1;margin:.2em 0 .1em;letter-spacing:-.02em}
+h1 .sub{display:block;font-size:.95rem;font-weight:400;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);margin-top:.7em}
+h2{font-size:1.5rem;margin:2.6em 0 .5em;padding-bottom:.25em;border-bottom:2px solid var(--rule)}
+h3{font-size:1.12rem;margin:1.8em 0 .3em}
+h4{font-size:1rem;margin:1.4em 0 .2em;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+p{margin:.6em 0}
+a{color:var(--accent2)}
+code,kbd{background:var(--code);padding:.1em .35em;border-radius:4px;
+  font:.88em/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.lede{font-size:1.1rem;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--rule);margin:2.5em 0}
+
+/* ---- table of contents ---- */
+nav.toc{background:var(--card);border:1px solid var(--rule);border-radius:10px;
+  padding:1rem 1.2rem;margin:2rem 0}
+nav.toc ol{margin:.3em 0;padding-left:1.2em;columns:2;column-gap:2rem}
+@media (max-width:600px){nav.toc ol{columns:1}}
+nav.toc li{margin:.15em 0}
+nav.toc a{text-decoration:none}
+nav.toc a:hover{text-decoration:underline}
+
+/* ---- panel figure with hotspots ---- */
+figure{margin:1.6em 0}
+figcaption{font-size:.86rem;color:var(--muted);margin-top:.5em}
+.panelwrap{position:relative;display:block;max-width:620px;margin:0 auto;
+  border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:#eda98a}
+.panelwrap img{display:block;width:100%;height:auto}
+.hot{position:absolute;transform:translate(-50%,-50%);
+  width:1.55em;height:1.55em;border-radius:50%;
+  background:#12100e;color:#fff;border:2px solid #fff;
+  font:700 .78rem/1.45em ui-monospace,Menlo,monospace;text-align:center;
+  text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.hot:hover{background:var(--accent2)}
+
+/* ---- tables ---- */
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.92rem}
+th,td{text-align:left;padding:.45em .6em;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+td.k{white-space:nowrap;font-weight:600}
+.scroll{overflow-x:auto}
+
+/* ---- callouts ---- */
+.note,.warn,.tip{border-left:3px solid var(--accent2);background:var(--card);
+  padding:.7em 1em;margin:1.2em 0;border-radius:0 8px 8px 0;font-size:.95rem}
+.warn{border-color:var(--warn)}
+.tip{border-color:var(--accent3)}
+.note b:first-child,.warn b:first-child,.tip b:first-child{letter-spacing:.03em}
+
+/* ---- diagrams ---- */
+svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.dia{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:1rem}
+text{fill:var(--fg);font:11px ui-monospace,Menlo,monospace}
+text.small{font-size:9.5px;fill:var(--muted)}
+text.ttl{font-size:11px;font-weight:700}
+.ax{stroke:var(--rule);stroke-width:1}
+.par{stroke:var(--accent2);stroke-width:2}
+.par2{stroke:var(--accent);stroke-width:2}
+.gh{stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3}
+.fillA{fill:var(--accent)}
+.fillB{fill:var(--accent2)}
+.fillC{fill:var(--accent3)}
+.knob{fill:none;stroke:var(--fg);stroke-width:1.5}
+.recipe{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:1rem 1.2rem;margin:1.2em 0}
+.recipe h3{margin-top:0}
+ul.tight{margin:.4em 0;padding-left:1.2em}
+ul.tight li{margin:.15em 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Fox Tail<span class="sub">96-partial additive oscillator · Daisy Patch SM · user manual</span></h1>
+
+<p class="lede">Fox Tail is a stereo additive oscillator. Ninety-six sine partials run at once;
+the panel is a set of tools for choosing which of them sound, how loud, at what frequency ratio,
+and where in the stereo field. There is no filter and no audio input — every shape you hear was
+drawn, not carved.</p>
+
+<figure>
+  <div class="panelwrap">
+    <img src="../emulator/web/Fox-Tail.png" alt="Fox Tail front panel">
+    <!-- hotspots: left%/top% measured against the 1161×1226 panel render -->
+    <a class="hot" style="left:7.1%;top:13.1%"  href="#cv">1</a>
+    <a class="hot" style="left:7.1%;top:36%"    href="#inharm">2</a>
+    <a class="hot" style="left:50%;top:36%"     href="#sliders">3</a>
+    <a class="hot" style="left:17.8%;top:57%"   href="#globalpots">4</a>
+    <a class="hot" style="left:71.8%;top:57%"   href="#fade">5</a>
+    <a class="hot" style="left:11.2%;top:70.5%" href="#pitch">6</a>
+    <a class="hot" style="left:20.6%;top:74.6%" href="#modes">7</a>
+    <a class="hot" style="left:30.8%;top:70.5%" href="#window">8</a>
+    <a class="hot" style="left:50.2%;top:70.5%" href="#window">9</a>
+    <a class="hot" style="left:69.8%;top:70.5%" href="#modes">10</a>
+    <a class="hot" style="left:79.5%;top:74.6%" href="#tilt">11</a>
+    <a class="hot" style="left:89.1%;top:70.5%" href="#modes">12</a>
+    <a class="hot" style="left:35.7%;top:85.5%" href="#tilt">13</a>
+    <a class="hot" style="left:45.2%;top:85.5%" href="#pitch">14</a>
+    <a class="hot" style="left:83.7%;top:85.5%" href="#out">15</a>
+  </div>
+  <figcaption>
+    <b>1</b> slider CV jacks ·
+    <b>2</b> INHARM ·
+    <b>3</b> band sliders ×1…×73 ·
+    <b>4</b> SHIFT / FINE / STEREO ·
+    <b>5</b> FADE TILT (fill order) ·
+    <b>6</b> COARSE pitch ·
+    <b>7</b> CLUSTER / SHEPARD ·
+    <b>8</b> WIN START ·
+    <b>9</b> WIN SIZE ·
+    <b>10</b> PHI / CLUSTERS ·
+    <b>11</b> BRIGHT / DARK ·
+    <b>12</b> WIN DUCK / DENSITY ·
+    <b>13</b> ODD ONLY gate ·
+    <b>14</b> V/OCT ·
+    <b>15</b> stereo out.
+    Click a number to jump to its section.
+  </figcaption>
+</figure>
+
+<nav class="toc">
+  <b>Contents</b>
+  <ol>
+    <li><a href="#overview">How it makes sound</a></li>
+    <li><a href="#sliders">The sliders: level &amp; fill</a></li>
+    <li><a href="#fade">FADE TILT: fill order</a></li>
+    <li><a href="#inharm">INHARM</a></li>
+    <li><a href="#globalpots">SHIFT and FINE</a></li>
+    <li><a href="#pitch">COARSE &amp; V/OCT</a></li>
+    <li><a href="#tilt">BRIGHT/DARK &amp; ODD ONLY</a></li>
+    <li><a href="#window">The shaper window</a></li>
+    <li><a href="#modes">CLUSTER vs SHEPARD</a></li>
+    <li><a href="#stereo">STEREO</a></li>
+    <li><a href="#gain">Levels &amp; gain compensation</a></li>
+    <li><a href="#leds">LEDs</a></li>
+    <li><a href="#cv">CV, calibration, limits</a></li>
+    <li><a href="#recipes">Patch recipes</a></li>
+    <li><a href="#ref">Reference numbers</a></li>
+  </ol>
+</nav>
+
+<h2 id="overview">1 · How it makes sound</h2>
+
+<p>Ninety-six sine oscillators run in parallel. Partial <i>k</i> normally sits at
+<code>k × f0</code> — partial 1 is the fundamental, partial 2 the octave, and so on.
+Every control on the panel does exactly one of four things:</p>
+
+<table>
+<tr><th>What it changes</th><th>Controls</th></tr>
+<tr><td class="k">Which partials sound, and how loud</td><td>the eight band sliders, the FADE TILT pots, SHIFT, BRIGHT/DARK, ODD ONLY</td></tr>
+<tr><td class="k">Where the partials sit in frequency</td><td>COARSE, V/OCT, FINE, INHARM, and the shaper (WIN START, WIN SIZE, PHI/CLUSTERS, DENSITY)</td></tr>
+<tr><td class="k">Where they sit in the stereo field</td><td>STEREO</td></tr>
+<tr><td class="k">Nothing you can hear directly</td><td>the two audio input jacks — Fox Tail never reads them</td></tr>
+</table>
+
+<h3>The bank is divided into eight bands</h3>
+<p>The eight sliders to the right of INHARM each own a slice of the harmonic series. The slices are
+geometric — equal width in <em>octaves</em>, not in harmonics — so the leftmost slider owns two
+partials and the rightmost owns about thirty. The panel prints where each one starts:
+<code>×1 ×2 ×4 ×7 ×13 ×23 ×41 ×73</code>.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 760 150" role="img" aria-label="Eight geometric bands across 96 partials">
+  <!-- band blocks: equal width in log2, first edge at 6.25% -->
+  <g>
+    <rect x="20"  y="40" width="47" height="34" fill="var(--accent2)" opacity=".18"/>
+    <rect x="67"  y="40" width="86" height="34" fill="var(--accent2)" opacity=".28"/>
+    <rect x="153" y="40" width="86" height="34" fill="var(--accent2)" opacity=".18"/>
+    <rect x="239" y="40" width="86" height="34" fill="var(--accent2)" opacity=".28"/>
+    <rect x="325" y="40" width="86" height="34" fill="var(--accent2)" opacity=".18"/>
+    <rect x="411" y="40" width="86" height="34" fill="var(--accent2)" opacity=".28"/>
+    <rect x="497" y="40" width="86" height="34" fill="var(--accent2)" opacity=".18"/>
+    <rect x="583" y="40" width="86" height="34" fill="var(--accent2)" opacity=".28"/>
+    <rect x="669" y="40" width="71" height="34" fill="var(--accent2)" opacity=".18"/>
+  </g>
+  <line class="ax" x1="20" y1="74" x2="740" y2="74"/>
+  <!-- partial ticks, log spaced: x = 20 + 720*log2(k)/log2(96) -->
+  <g>
+    <line class="par" x1="20"  y1="74" x2="20"  y2="34"/>
+    <line class="par" x1="129" y1="74" x2="129" y2="42"/>
+    <line class="par" x1="238" y1="74" x2="238" y2="46"/>
+    <line class="par" x1="327" y1="74" x2="327" y2="50"/>
+    <line class="par" x1="401" y1="74" x2="401" y2="52"/>
+    <line class="par" x1="475" y1="74" x2="475" y2="54"/>
+    <line class="par" x1="547" y1="74" x2="547" y2="56"/>
+    <line class="par" x1="616" y1="74" x2="616" y2="58"/>
+    <line class="par" x1="683" y1="74" x2="683" y2="60"/>
+    <line class="par" x1="740" y1="74" x2="740" y2="62"/>
+  </g>
+  <text class="small" x="20"  y="90" text-anchor="middle">1</text>
+  <text class="small" x="129" y="90" text-anchor="middle">2</text>
+  <text class="small" x="238" y="90" text-anchor="middle">4</text>
+  <text class="small" x="401" y="90" text-anchor="middle">12</text>
+  <text class="small" x="547" y="90" text-anchor="middle">32</text>
+  <text class="small" x="740" y="90" text-anchor="middle">96</text>
+  <text class="small" x="380" y="106" text-anchor="middle">partial number (log scale)</text>
+  <!-- slider labels -->
+  <g>
+    <text class="small" x="44"  y="30" text-anchor="middle">×1</text>
+    <text class="small" x="110" y="30" text-anchor="middle">×2</text>
+    <text class="small" x="196" y="30" text-anchor="middle">×4</text>
+    <text class="small" x="282" y="30" text-anchor="middle">×7</text>
+    <text class="small" x="368" y="30" text-anchor="middle">×13</text>
+    <text class="small" x="454" y="30" text-anchor="middle">×23</text>
+    <text class="small" x="540" y="30" text-anchor="middle">×41</text>
+    <text class="small" x="655" y="30" text-anchor="middle">×73</text>
+  </g>
+  <text class="ttl" x="20" y="16">Eight bands, equal width in octaves</text>
+  <text class="small" x="20" y="132">The band a slider owns holds 2 partials at the left and ~24 at the right — same number of octaves, far more harmonics.</text>
+</svg>
+</figure>
+
+<h2 id="sliders">2 · The band sliders — level <em>and</em> fill</h2>
+
+<p>Each of sliders <code>×1…×73</code> does two jobs at once, split across its travel:</p>
+
+<ul class="tight">
+  <li><b>All the way up from zero:</b> the band's <b>level</b> rises.</li>
+  <li><b>Above the halfway point, additionally:</b> the band <b>fills in</b> — more of its partials
+      start sounding, one at a time, spreading outward from a seed partial.</li>
+</ul>
+
+<p>So all eight sliders parked at half gives you a <b>skeleton comb</b>: exactly eight partials, one
+per band, at moderate level. Push a slider past half and its band thickens up into a full cluster of
+harmonics. The coupling is deliberate — a band with more partials in it genuinely <em>is</em> louder,
+so level and count move together and the drawn envelope stays believable at any setting.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 760 200" role="img" aria-label="Slider travel: level below half, fill above half">
+  <g>
+    <text class="ttl" x="20" y="16">Slider at 30% — level only, one partial</text>
+    <line class="ax" x1="20" y1="70" x2="240" y2="70"/>
+    <line class="par" x1="120" y1="70" x2="120" y2="48"/>
+    <text class="small" x="20" y="86">one seed partial, quiet</text>
+  </g>
+  <g>
+    <text class="ttl" x="270" y="16">Slider at 70% — louder, filling</text>
+    <line class="ax" x1="270" y1="70" x2="490" y2="70"/>
+    <line class="par" x1="370" y1="70" x2="370" y2="30"/>
+    <line class="par" x1="352" y1="70" x2="352" y2="38"/>
+    <line class="par" x1="388" y1="70" x2="388" y2="38"/>
+    <line class="par" x1="334" y1="70" x2="334" y2="52"/>
+    <line class="par" x1="406" y1="70" x2="406" y2="52"/>
+    <text class="small" x="270" y="86">neighbours fading in around the seed</text>
+  </g>
+  <g>
+    <text class="ttl" x="520" y="16">Slider at 100% — full band</text>
+    <line class="ax" x1="520" y1="70" x2="740" y2="70"/>
+    <g class="par">
+      <line x1="530" y1="70" x2="530" y2="46"/><line x1="548" y1="70" x2="548" y2="42"/>
+      <line x1="566" y1="70" x2="566" y2="38"/><line x1="584" y1="70" x2="584" y2="34"/>
+      <line x1="602" y1="70" x2="602" y2="30"/><line x1="620" y1="70" x2="620" y2="30"/>
+      <line x1="638" y1="70" x2="638" y2="32"/><line x1="656" y1="70" x2="656" y2="34"/>
+      <line x1="674" y1="70" x2="674" y2="36"/><line x1="692" y1="70" x2="692" y2="38"/>
+      <line x1="710" y1="70" x2="710" y2="40"/><line x1="728" y1="70" x2="728" y2="42"/>
+    </g>
+    <text class="small" x="520" y="86">every partial in the band sounding</text>
+  </g>
+  <!-- travel bar -->
+  <g>
+    <rect x="20" y="130" width="360" height="18" fill="var(--accent2)" opacity=".2"/>
+    <rect x="380" y="130" width="360" height="18" fill="var(--accent)" opacity=".28"/>
+    <line class="ax" x1="20" y1="148" x2="740" y2="148"/>
+    <text class="small" x="200" y="143" text-anchor="middle">level rises · 1 partial</text>
+    <text class="small" x="560" y="143" text-anchor="middle">level rises · band fills in</text>
+    <text class="small" x="20"  y="166">slider down</text>
+    <text class="small" x="380" y="166" text-anchor="middle">half</text>
+    <text class="small" x="740" y="166" text-anchor="end">slider up</text>
+  </g>
+</svg>
+</figure>
+
+<div class="tip"><b>Practical:</b> to draw a formant-ish hump, set the sliders in an arc and leave the
+bands you want thin at half. To play “additive organ”, run everything at half and use SHIFT (below)
+to slide the eight chosen harmonics up and down the series.</div>
+
+<p>Each slider also has its own CV jack in the top row. The jack is summed with the slider and
+clamped, so a slider parked at zero is opened by CV, and one parked at the top ignores it.</p>
+
+<h2 id="fade">3 · FADE TILT — where each band fills from</h2>
+
+<p>The six pots labelled under the <b>FADE TILT (HP-BP-LP)</b> bracket set the <em>fill order</em> for
+bands ×4 through ×73. (The first two bands hold two partials each, so they have no pot; their two
+pots on the panel row are SHIFT/FINE/STEREO's neighbours — see below.)</p>
+
+<table>
+<tr><th>Pot position</th><th>Fill order</th><th>Sounds like</th></tr>
+<tr><td class="k">Full CCW</td><td>starts at the band's <b>highest</b> partial and grows downward</td><td>highpass — the band's top edge survives</td></tr>
+<tr><td class="k">Centre</td><td>starts in the middle and grows both ways</td><td>bandpass</td></tr>
+<tr><td class="k">Full CW</td><td>starts at the band's <b>lowest</b> partial and grows upward</td><td>lowpass</td></tr>
+</table>
+
+<figure class="dia">
+<svg viewBox="0 0 760 130" role="img" aria-label="Fill order: highpass, bandpass, lowpass">
+  <g>
+    <text class="ttl" x="20" y="16">CCW — highpass</text>
+    <line class="ax" x1="20" y1="80" x2="240" y2="80"/>
+    <g class="par2">
+      <line x1="180" y1="80" x2="180" y2="36"/><line x1="198" y1="80" x2="198" y2="40"/>
+      <line x1="162" y1="80" x2="162" y2="48"/><line x1="216" y1="80" x2="216" y2="46"/>
+      <line x1="144" y1="80" x2="144" y2="62"/><line x1="234" y1="80" x2="234" y2="56"/>
+    </g>
+    <g class="gh"><line x1="30" y1="80" x2="30" y2="72"/><line x1="60" y1="80" x2="60" y2="72"/>
+      <line x1="90" y1="80" x2="90" y2="72"/><line x1="120" y1="80" x2="120" y2="72"/></g>
+  </g>
+  <g>
+    <text class="ttl" x="270" y="16">Centre — bandpass</text>
+    <line class="ax" x1="270" y1="80" x2="490" y2="80"/>
+    <g class="par2">
+      <line x1="380" y1="80" x2="380" y2="36"/>
+      <line x1="362" y1="80" x2="362" y2="42"/><line x1="398" y1="80" x2="398" y2="42"/>
+      <line x1="344" y1="80" x2="344" y2="52"/><line x1="416" y1="80" x2="416" y2="52"/>
+      <line x1="326" y1="80" x2="326" y2="64"/><line x1="434" y1="80" x2="434" y2="64"/>
+    </g>
+  </g>
+  <g>
+    <text class="ttl" x="520" y="16">CW — lowpass</text>
+    <line class="ax" x1="520" y1="80" x2="740" y2="80"/>
+    <g class="par2">
+      <line x1="530" y1="80" x2="530" y2="36"/><line x1="548" y1="80" x2="548" y2="40"/>
+      <line x1="566" y1="80" x2="566" y2="48"/><line x1="584" y1="80" x2="584" y2="58"/>
+      <line x1="602" y1="80" x2="602" y2="68"/>
+    </g>
+    <g class="gh"><line x1="650" y1="80" x2="650" y2="72"/><line x1="680" y1="80" x2="680" y2="72"/>
+      <line x1="710" y1="80" x2="710" y2="72"/><line x1="740" y1="80" x2="740" y2="72"/></g>
+  </g>
+  <text class="small" x="20" y="112">Distance is counted in <tspan font-style="italic">partials</tspan>, so a pot means the same thing in a band holding 2 and one holding 30. Dashed = not sounding.</text>
+</svg>
+</figure>
+
+<p>Highpass sits at CCW so that building a spectral hump is one diagonal gesture: a band to the left
+of your peak wants to keep the partials closest to the peak — which are its <em>high</em> ones — so
+the pots rise left-to-right exactly as the sliders do.</p>
+
+<h2 id="inharm">4 · INHARM — the stiff string</h2>
+
+<p>Slider 1 (with its own CV jack) bends the whole series away from whole-number ratios, using the
+stiff-string law <code>f<sub>k</sub> = k·f0·√(1+B·k²)</code>. Because the stretch goes as <i>k²</i>,
+the low partials stay nearly pure while the top of the bank runs sharp — piano-ish at low settings,
+bell and gong metallic at the top. At full travel the upper partials land several times above their
+harmonic positions.</p>
+
+<div class="note"><b>Why it matters:</b> this is the one thing a subtractive voice fundamentally cannot
+fake. A filter can shape a harmonic spectrum; it cannot make it inharmonic.</div>
+
+<h2 id="globalpots">5 · SHIFT and FINE</h2>
+
+<h3>SHIFT — slides the drawn shape along the series</h3>
+<p>SHIFT multiplies the coordinate that both the band envelope <em>and</em> the fill comb are read at,
+±1 octave from centre. <b>No partial changes frequency.</b> Only which partials are picked, and how
+loud they are. Turned clockwise the shape moves up the series, counter-clockwise down. Centre is
+neutral.</p>
+<p>Paired with the skeleton comb (all sliders at half) this is the single most musical gesture on the
+panel: eight chosen harmonics scanning up and down the series over a pitch that never moves.</p>
+
+<h3>FINE — ±1 semitone</h3>
+<p>COARSE covers 3.3 octaves in one sweep, which is far too coarse to tune by hand. FINE adds
+±1 semitone, centre = in tune, clockwise = sharp. The firmware snaps a small deadzone at noon, so
+12 o'clock is exactly in tune despite pot noise.</p>
+
+<h2 id="pitch">6 · COARSE and V/OCT</h2>
+
+<p><b>COARSE</b> sets the fundamental over <b>20 Hz – 200 Hz</b>, exponentially: the knob's centre
+lands on the geometric mean (~63 Hz), not the arithmetic one. The range is deliberately narrow —
+this is the root of an additive bank, and the partials, not the root, carry the top of the range.</p>
+
+<p>The <b>V/O</b> jack is a calibrated 1 V/octave input, summed with COARSE and FINE. On a calibrated
+unit tracking holds within a few cents over two octaves. The effective fundamental is clamped to
+8 Hz – 6 kHz so that a railed CV input means “very high note” rather than a silent module.</p>
+
+<div class="warn"><b>Nyquist is real.</b> At 48 kHz an f0 of 220 Hz leaves about 109 usable partials;
+at 880 Hz only 27. Partials fade out over the top 5% of the range rather than switching off, and a
+band whose partials have all run past Nyquist pulses its LED dimly rather than just going dark.</div>
+
+<h2 id="tilt">7 · BRIGHT/DARK and ODD ONLY</h2>
+
+<h3>The tilt switch (right-hand switch)</h3>
+<p>The underlying slope of the untouched spectrum:</p>
+<table>
+<tr><th>Position</th><th>Law</th><th>Character</th></tr>
+<tr><td class="k">DARK (down)</td><td><code>1/r</code></td><td>a sawtooth's −6 dB/octave; what an acoustic source does</td></tr>
+<tr><td class="k">BRIGHT (up)</td><td><code>1/√r</code></td><td>equal power per octave; ~3 dB/octave brighter, ≈20 dB over the bank</td></tr>
+</table>
+<p>BRIGHT makes every band slider equally effective, which is a lovely panel property, but it leaves
+the top octaves loud enough that you hear individual partials beating. DARK is the safer bed for
+drones. The flip is level-compensated, so it changes colour and not loudness.</p>
+
+<h3>ODD ONLY (gate jack)</h3>
+<p>A gate high mutes the even-numbered partials, leaving 1, 3, 5, … — hollow, clarinet-ish. Unpatched
+reads low, which is ALL partials, so the jack costs nothing left empty. It is a digital input: gates
+and squares, not CV. Under ODD ONLY, SHEPARD's glide takes twice as long to come round (see below).</p>
+
+<h2 id="window">8 · The shaper window — WIN START and WIN SIZE</h2>
+
+<p>The two big knobs marked <b>WIN START</b> and <b>WIN SIZE</b> define a movable window over the
+bank. <b>Partials inside the window get retuned; partials outside stay exactly where they are.</b>
+This is what lets the weird stuff happen without losing the pitch — leave the fundamental outside the
+window and it anchors the note while everything above it goes strange.</p>
+
+<p>Both knobs are exponential over 1…96 partials, so the low end of the bank — where the ear cares —
+gets most of the travel. Both are CV-able (<b>START</b> and <b>SIZE</b> jacks), which makes the window
+itself a playable target. They mean the same thing in both modes; that is what makes a screenless
+panel survive the mode switch.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 760 190" role="img" aria-label="The shaper window over the partial bank">
+  <line class="ax" x1="20" y1="120" x2="740" y2="120"/>
+  <!-- window shading with tapered shoulders -->
+  <path d="M240,120 L280,60 L560,60 L600,120 Z" fill="var(--accent)" opacity=".18"/>
+  <path d="M240,120 C258,120 262,60 280,60 L560,60 C578,60 582,120 600,120 Z" fill="none" stroke="var(--accent)" stroke-width="2"/>
+  <line class="gh" x1="280" y1="40" x2="280" y2="130"/>
+  <line class="gh" x1="560" y1="40" x2="560" y2="130"/>
+  <text class="small" x="280" y="34" text-anchor="middle">WIN START</text>
+  <text class="small" x="420" y="34" text-anchor="middle">WIN SIZE</text>
+  <text class="small" x="560" y="34" text-anchor="middle">window end</text>
+  <line class="par" x1="280" y1="44" x2="556" y2="44" marker-end="" />
+  <!-- partials -->
+  <g class="par">
+    <line x1="40"  y1="120" x2="40"  y2="96"/><line x1="80" y1="120" x2="80" y2="98"/>
+    <line x1="120" y1="120" x2="120" y2="100"/><line x1="160" y1="120" x2="160" y2="102"/>
+    <line x1="200" y1="120" x2="200" y2="104"/>
+  </g>
+  <g class="par2">
+    <line x1="300" y1="120" x2="300" y2="86"/><line x1="340" y1="120" x2="340" y2="86"/>
+    <line x1="380" y1="120" x2="380" y2="86"/><line x1="420" y1="120" x2="420" y2="86"/>
+    <line x1="460" y1="120" x2="460" y2="86"/><line x1="500" y1="120" x2="500" y2="86"/>
+    <line x1="540" y1="120" x2="540" y2="86"/>
+  </g>
+  <g class="par">
+    <line x1="620" y1="120" x2="620" y2="106"/><line x1="660" y1="120" x2="660" y2="108"/>
+    <line x1="700" y1="120" x2="700" y2="110"/><line x1="740" y1="120" x2="740" y2="112"/>
+  </g>
+  <text class="small" x="130" y="140" text-anchor="middle">anchored — hold the pitch</text>
+  <text class="small" x="420" y="140" text-anchor="middle">retuned by the mode</text>
+  <text class="small" x="680" y="140" text-anchor="middle">anchored</text>
+  <text class="small" x="20" y="168">The shoulders are one partial wide and sit OUTSIDE the window: a partial exactly at WIN START is already fully shifted.</text>
+  <text class="small" x="20" y="182">Without the taper, sweeping either knob drags partials across a hard edge one after another — a burst of clicks.</text>
+</svg>
+</figure>
+
+<div class="note"><b>In SHEPARD</b> the window start and size snap to whole partials (two at a time
+under ODD ONLY). That is not cosmetic: it puts every partial's window weight at exactly 0 or 1, which
+is what makes the endless-glide wrap seamless. It also makes “exclude the fundamental” a repeatable
+gesture instead of a hunt. <b>In CLUSTER</b> the window is continuous.</div>
+
+<h2 id="modes">9 · CLUSTER vs SHEPARD</h2>
+
+<p>The left-hand switch picks what happens inside the window. The two mode knobs — the panel's
+<b>PHI / CLUSTERS</b> and <b>WIN DUCK / DENSITY</b> — are the only two controls that change meaning.</p>
+
+<table>
+<tr><th></th><th>CLUSTER (switch down)</th><th>SHEPARD (switch up)</th></tr>
+<tr><td class="k">Knob 4<br>PHI / CLUSTERS</td><td>partials per cluster; <b>centre = 1, nothing shifts</b>. CW collapses onto the cluster's low end, CCW onto its high end</td><td>glissando <b>rate</b>; centre = frozen, CW = rising, CCW = falling</td></tr>
+<tr><td class="k">Knob 5<br>WIN DUCK / DENSITY</td><td>density: how far the collapse goes, 0 at CCW to 0.995 at CW</td><td>ducks the windowed partials; <b>CCW = unity gain</b>, CW = window silent</td></tr>
+<tr><td class="k">Envelope read at</td><td>the partial <b>index</b> — a slider always owns the same harmonics however far the collapse dragged them</td><td>the <b>shifted</b> frequency — partials slide <em>through</em> the drawn envelope</td></tr>
+<tr><td class="k">Sliders act as</td><td>a chooser of ingredients</td><td>an EQ on the output</td></tr>
+</table>
+
+<div class="tip"><b>Knob 4 is centre-neutral in both modes</b>, with a software deadzone at noon. A
+stock build has no mechanical detent, so trust the sound, not the pointer: at noon nothing shifts and
+nothing glides.</div>
+
+<h3>CLUSTER</h3>
+<p>The windowed partials are grouped into clusters of <i>m</i> partials each, and every member slides
+toward one end of its own cluster. Density sets how far it gets.</p>
+
+<ul class="tight">
+  <li><b>Density 0</b> (knob 5 CCW): nothing moves. There is a 2% deadzone at the bottom so a pot that
+      doesn't quite reach its end can't leave a detune behind.</li>
+  <li><b>Density 0.9–1.0:</b> the useful zone. Members land within a hair of each other and beat —
+      thick chorus, then slow shimmer, then near-unison. Beat periods run into seconds.</li>
+  <li><b>Knob 4 CW</b> (collapse down): the survivors land on exact multiples of <i>m</i> — a comb
+      aligned to f0, so it <em>thickens</em> the note.</li>
+  <li><b>Knob 4 CCW</b> (collapse up): the same spacing, offset by <i>m</i>−1, so it is <em>not</em>
+      aligned to f0 — it rings and adds a second implied pitch instead of thickening.</li>
+  <li>Knob 4 reaches far enough that the whole window becomes a <b>single cluster</b>.</li>
+  <li>Density near 1/4, 1/2 and 1 lands on spectra that imply a subharmonic (with m = 2, d = 0.5 you
+      get 1, 1.5, 3, 3.5 … = multiples of f0/2).</li>
+</ul>
+
+<figure class="dia">
+<svg viewBox="0 0 760 210" role="img" aria-label="Cluster collapse, downward and upward">
+  <text class="ttl" x="20" y="16">CLUSTER, m = 4 partials per cluster</text>
+
+  <text class="small" x="20" y="44">density 0 — untouched</text>
+  <line class="ax" x1="150" y1="52" x2="740" y2="52"/>
+  <g class="par">
+    <line x1="170" y1="52" x2="170" y2="34"/><line x1="218" y1="52" x2="218" y2="34"/>
+    <line x1="266" y1="52" x2="266" y2="34"/><line x1="314" y1="52" x2="314" y2="34"/>
+    <line x1="362" y1="52" x2="362" y2="34"/><line x1="410" y1="52" x2="410" y2="34"/>
+    <line x1="458" y1="52" x2="458" y2="34"/><line x1="506" y1="52" x2="506" y2="34"/>
+    <line x1="554" y1="52" x2="554" y2="34"/><line x1="602" y1="52" x2="602" y2="34"/>
+    <line x1="650" y1="52" x2="650" y2="34"/><line x1="698" y1="52" x2="698" y2="34"/>
+  </g>
+
+  <text class="small" x="20" y="110">knob 4 CW — collapse DOWN</text>
+  <text class="small" x="20" y="124">multiples of m: thickens</text>
+  <line class="ax" x1="150" y1="118" x2="740" y2="118"/>
+  <g class="par2">
+    <line x1="170" y1="118" x2="170" y2="88"/><line x1="176" y1="118" x2="176" y2="94"/>
+    <line x1="182" y1="118" x2="182" y2="94"/><line x1="188" y1="118" x2="188" y2="94"/>
+    <line x1="362" y1="118" x2="362" y2="88"/><line x1="368" y1="118" x2="368" y2="94"/>
+    <line x1="374" y1="118" x2="374" y2="94"/><line x1="380" y1="118" x2="380" y2="94"/>
+    <line x1="554" y1="118" x2="554" y2="88"/><line x1="560" y1="118" x2="560" y2="94"/>
+    <line x1="566" y1="118" x2="566" y2="94"/><line x1="572" y1="118" x2="572" y2="94"/>
+  </g>
+  <g class="gh">
+    <line x1="218" y1="52" x2="180" y2="88"/><line x1="266" y1="52" x2="184" y2="88"/>
+    <line x1="314" y1="52" x2="188" y2="88"/>
+  </g>
+
+  <text class="small" x="20" y="176">knob 4 CCW — collapse UP</text>
+  <text class="small" x="20" y="190">same spacing, offset: rings</text>
+  <line class="ax" x1="150" y1="184" x2="740" y2="184"/>
+  <g class="par2">
+    <line x1="314" y1="184" x2="314" y2="154"/><line x1="308" y1="184" x2="308" y2="160"/>
+    <line x1="302" y1="184" x2="302" y2="160"/><line x1="296" y1="184" x2="296" y2="160"/>
+    <line x1="506" y1="184" x2="506" y2="154"/><line x1="500" y1="184" x2="500" y2="160"/>
+    <line x1="494" y1="184" x2="494" y2="160"/><line x1="488" y1="184" x2="488" y2="160"/>
+    <line x1="698" y1="184" x2="698" y2="154"/><line x1="692" y1="184" x2="692" y2="160"/>
+    <line x1="686" y1="184" x2="686" y2="160"/><line x1="680" y1="184" x2="680" y2="160"/>
+  </g>
+</svg>
+</figure>
+
+<div class="warn"><b>Cluster is the loud mode</b>, and it is compensated for you — see
+<a href="#gain">Levels &amp; gain compensation</a>. If you build a version with the compensation
+defeated (<code>NO_NORM=1</code>), the density knob swings the level by many dB.</div>
+
+<h3>SHEPARD</h3>
+<p>Every partial in the window shifts toward the next one up: <code>r<sub>k</sub> = k + φ</code>.
+At φ = 1 the whole ensemble is identical to φ = 0 with the partials relabelled — so a continuously
+rising φ produces a glide that never restarts. Partial 1 travels a whole octave per wrap and partial
+72 moves 24 cents, so the low partials sweep enormously and the high ones barely move; what earns the
+name is the wrap, not uniform motion.</p>
+
+<ul class="tight">
+  <li><b>Knob 4 = rate</b>, exponential from 0.01 to 10 partials/second, centre frozen, CW rising.
+      The illusion holds to roughly half a wrap per second — <b>the usable range is the bottom of the
+      knob</b>. The top of the travel is a zap effect, deliberately.</li>
+  <li><b>The CLUSTERS jack is the better driver.</b> Patch a slow ramp LFO into it. The firmware reads
+      the jack's <em>change</em>, not its level, and folds any reset larger than half a wrap back into
+      continuous motion — so the LFO's reset is not a click, and its depth does not have to be tuned
+      to exactly one partial.</li>
+  <li><b>The ends fade.</b> The bank is finite, so a shift leaves nothing at the bottom and pushes one
+      off the top. Both ends fade to silence over four partials, keyed to the <em>window</em> rather
+      than the bank, which is what makes the wrap exact. The cost is a narrow notch just above the
+      window's bottom edge — static, a gap rather than a loop.</li>
+  <li><b>ODD ONLY doubles the cycle length:</b> the odd set only lands back on itself after two index
+      steps, so a wrap takes twice as long at the same apparent glide speed.</li>
+  <li><b>Knob 5 ducks the window</b>, inverted so the knob at rest (CCW) is unity gain. Sweeping it up
+      fades out just the moving partials and leaves the anchored ones playing.</li>
+</ul>
+
+<figure class="dia">
+<svg viewBox="0 0 760 200" role="img" aria-label="Shepard phi shift and the end fades">
+  <text class="ttl" x="20" y="16">SHEPARD — partials climb, ends fade, ensemble repeats</text>
+  <!-- envelope curve -->
+  <path d="M40,140 C120,60 260,44 400,52 C540,60 660,86 740,132" fill="none" stroke="var(--accent)" stroke-width="2" opacity=".7"/>
+  <text class="small" x="330" y="40" fill="var(--accent)">fixed band envelope (drawn with the sliders)</text>
+  <line class="ax" x1="20" y1="150" x2="740" y2="150"/>
+  <g class="par2">
+    <line x1="60"  y1="150" x2="60"  y2="146"/>
+    <line x1="110" y1="150" x2="110" y2="120"/><line x1="160" y1="150" x2="160" y2="104"/>
+    <line x1="210" y1="150" x2="210" y2="96"/><line x1="260" y1="150" x2="260" y2="88"/>
+    <line x1="310" y1="150" x2="310" y2="80"/><line x1="360" y1="150" x2="360" y2="72"/>
+    <line x1="410" y1="150" x2="410" y2="76"/><line x1="460" y1="150" x2="460" y2="80"/>
+    <line x1="510" y1="150" x2="510" y2="86"/><line x1="560" y1="150" x2="560" y2="94"/>
+    <line x1="610" y1="150" x2="610" y2="104"/><line x1="660" y1="150" x2="660" y2="118"/>
+    <line x1="710" y1="150" x2="710" y2="146"/>
+  </g>
+  <g stroke="var(--accent3)" stroke-width="1.5" fill="none">
+    <path d="M60,162 l40,0" marker-end="url(#ar)"/>
+    <path d="M160,162 l40,0" marker-end="url(#ar)"/>
+    <path d="M310,162 l40,0" marker-end="url(#ar)"/>
+    <path d="M510,162 l40,0" marker-end="url(#ar)"/>
+    <path d="M660,162 l40,0" marker-end="url(#ar)"/>
+  </g>
+  <defs>
+    <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--accent3)"/>
+    </marker>
+  </defs>
+  <text class="small" x="60"  y="186">born silent here…</text>
+  <text class="small" x="740" y="186" text-anchor="end">…and dies silent here</text>
+</svg>
+</figure>
+
+<h2 id="stereo">10 · STEREO</h2>
+
+<p>The STEREO pot is not a width fader. It <b>morphs between three stereo configurations</b> and then
+spends its last quarter on <em>motion</em> rather than shape. The partials are distributed across
+eight pan slots by a fixed pattern that throws neighbouring partials as far apart as possible, so what
+you hear is a cloud rather than eight discrete positions.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 760 260" role="img" aria-label="STEREO pot travel and the three configurations">
+  <!-- travel bar -->
+  <rect x="20" y="24" width="57" height="22" fill="var(--muted)" opacity=".35"/>
+  <rect x="77" y="24" width="302" height="22" fill="var(--accent2)" opacity=".3"/>
+  <rect x="379" y="24" width="180" height="22" fill="var(--accent)" opacity=".3"/>
+  <rect x="559" y="24" width="181" height="22" fill="var(--accent3)" opacity=".35"/>
+  <line class="ax" x1="20" y1="46" x2="740" y2="46"/>
+  <text class="small" x="48"  y="39" text-anchor="middle">MONO</text>
+  <text class="small" x="228" y="39" text-anchor="middle">mono → scatter</text>
+  <text class="small" x="469" y="39" text-anchor="middle">scatter → orbit</text>
+  <text class="small" x="650" y="39" text-anchor="middle">orbit motion</text>
+  <text class="small" x="20"  y="62">CCW</text>
+  <text class="small" x="77"  y="62" text-anchor="middle">8%</text>
+  <text class="small" x="379" y="62" text-anchor="middle">50%</text>
+  <text class="small" x="559" y="62" text-anchor="middle">75%</text>
+  <text class="small" x="740" y="62" text-anchor="end">CW</text>
+
+  <!-- three fields -->
+  <g>
+    <text class="ttl" x="20" y="100">MONO</text>
+    <line class="ax" x1="20" y1="150" x2="240" y2="150"/>
+    <circle cx="130" cy="150" r="7" class="fillB" opacity=".9"/>
+    <text class="small" x="20" y="168">L</text><text class="small" x="240" y="168" text-anchor="end">R</text>
+    <text class="small" x="20" y="186">all 8 slots at centre</text>
+  </g>
+  <g>
+    <text class="ttl" x="270" y="100">SCATTER</text>
+    <line class="ax" x1="270" y1="150" x2="490" y2="150"/>
+    <g class="fillB" opacity=".9">
+      <circle cx="270" cy="150" r="6"/><circle cx="301" cy="150" r="6"/>
+      <circle cx="333" cy="150" r="6"/><circle cx="364" cy="150" r="6"/>
+      <circle cx="396" cy="150" r="6"/><circle cx="427" cy="150" r="6"/>
+      <circle cx="459" cy="150" r="6"/><circle cx="490" cy="150" r="6"/>
+    </g>
+    <text class="small" x="270" y="186">an even fan; only the two end slots reach hard L/R</text>
+  </g>
+  <g>
+    <text class="ttl" x="520" y="100">ORBIT</text>
+    <line class="ax" x1="520" y1="150" x2="740" y2="150"/>
+    <g class="fillA" opacity=".9">
+      <circle cx="630" cy="150" r="6"/><circle cx="681" cy="150" r="6"/>
+      <circle cx="542" cy="150" r="6"/><circle cx="579" cy="150" r="6"/>
+      <circle cx="579" cy="150" r="6"/><circle cx="630" cy="150" r="6"/>
+      <circle cx="681" cy="150" r="6"/><circle cx="718" cy="150" r="6"/>
+    </g>
+    <g stroke="var(--accent)" stroke-width="1.5" fill="none" opacity=".8">
+      <path d="M600,132 C640,118 700,124 726,140" marker-end="url(#ar2)"/>
+    </g>
+    <defs><marker id="ar2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker></defs>
+    <text class="small" x="520" y="186">the slots circle the field; radius stops short of hard pan</text>
+  </g>
+
+  <text class="small" x="20" y="222">Above 75% the shape stops changing: rotation speeds up from 0.04 to 0.20 rev/s, and the odd-numbered</text>
+  <text class="small" x="20" y="236">slots reverse and run at a slightly different rate, so the two clouds drift through each other and</text>
+  <text class="small" x="20" y="250">the full pattern takes about ten minutes to come round.</text>
+</svg>
+</figure>
+
+<h3>What each stage sounds like</h3>
+<table>
+<tr><th>Pot</th><th>Behaviour</th></tr>
+<tr><td class="k">0 – 8%</td><td>a genuine mono park. Nothing is panned; use it when the patch has to fold down.</td></tr>
+<tr><td class="k">8 – 50%</td><td>morph from mono into SCATTER — a static, even fan of 8 positions. Neighbouring partials sit far apart, so a dense band smears into a wide sheet.</td></tr>
+<tr><td class="k">50 – 75%</td><td>morph from SCATTER into ORBIT, with rotation creeping up from a standstill. Around the middle of this range you get a slow, barely-moving image.</td></tr>
+<tr><td class="k">75 – 100%</td><td>the shape is fixed; the travel now buys motion. Rotation goes 0.04 → 0.20 revolutions/second, and the odd slot subset counter-rotates so the two clouds cross about twice per revolution.</td></tr>
+</table>
+
+<h3>Three things worth knowing</h3>
+<ul class="tight">
+  <li><b>The fundamental is always centred.</b> Spread is scaled by <code>ratio − 1</code>, so
+      partial 1 sits dead centre and the image opens up above it. A fully spread fundamental smears
+      the whole thing; anchoring it at the bottom is what makes wide settings still read as one note.</li>
+  <li><b>Nothing reaches a hard pan except SCATTER's two end slots.</b> ORBIT's radius stops at 0.8 on
+      purpose: hard panning puts half the bank in one channel at full gain instead of all of it at
+      0.707, which is the only thing here that ever moved a peak.</li>
+  <li><b>ODD ONLY does not shove the image sideways.</b> Each configuration is built so the odd and
+      even partial subsets stay balanced around centre — that property is asserted by a test, not
+      hoped for.</li>
+</ul>
+
+<div class="note"><b>Panel note:</b> <code>OUT LEFT</code> and <code>OUT RIGHT</code> are correct as
+printed. Fox Tail is stereo out only — the two IN jacks are unused by this firmware (reading the audio
+input is against the module's noise budget).</div>
+
+<h2 id="gain">11 · Levels and gain compensation</h2>
+
+<p>Fox Tail runs a <b>fixed headroom budget</b> — the Hammond drawbar answer — rather than dynamic
+normalisation. Nothing ducks when you push a slider up. Three fixed pieces of gain staging keep that
+honest:</p>
+
+<h4>1 · Headroom</h4>
+<p>A constant 0.30 sits in every band gain, sized against the worst case of <em>all eight sliders at
+maximum</em>. Because the partials start at random phases, a bank sums as √N — so an ordinary two- or
+three-band patch sits 6–9 dB below the case being protected. All sliders up lands around −19 dBFS
+RMS on the DARK slope. <b>Fox Tail is a quiet module by design; expect to gain it up downstream.</b></p>
+
+<h4>2 · Tilt compensation</h4>
+<p>Summed over the bank, equal power per octave is about 5 dB louder than a sawtooth slope. The
+BRIGHT/DARK switch is level-compensated so throwing it changes the colour and not the loudness
+(worst error 0.06 dB).</p>
+
+<h4>3 · Cluster compensation</h4>
+<p>This is the big one. In CLUSTER the tilt and the band envelope are read at the <em>shifted</em>
+frequency, so collapsing the bank down-spectrum genuinely adds power — about 13 dB at full density.
+An attenuation derived from the geometry alone (density, cluster size, window) is folded into the band
+gains, holding RMS flat within 0.9 dB right across the density knob.</p>
+
+<ul class="tight">
+  <li>It <b>only ever attenuates</b>. Collapsing <em>up</em> (knob 4 CCW) actually gets quieter, and
+      the model would ask for gain there — that request is refused, because it would also reach
+      partials the window never moved.</li>
+  <li>It is computed from the control positions alone, never from the audio. That is not a style
+      choice: gains derived from the engine's own amplitude state produced audible ~8 kHz artifacts on
+      hardware, twice.</li>
+  <li>So: <b>collapse down = compensated flat; collapse up = up to 0.4 dB quieter</b>. Exactly 0.00 dB
+      at the centre detent.</li>
+</ul>
+
+<h4>4 · The output clip</h4>
+<p>Linear below 0.85, parabolic to a hard cap at 1.15. As shipped nothing reaches the knee — an
+oscillator patch passes through bit-exact — so the clip is insurance for Cluster's beat transients,
+not a stage in the sound. Worst case measured over 22,875 patch combinations: peak 0.594, i.e. 3.1 dB
+of margin.</p>
+
+<figure class="dia">
+<svg viewBox="0 0 760 120" role="img" aria-label="Gain staging headroom map">
+  <line class="ax" x1="20" y1="80" x2="740" y2="80"/>
+  <rect x="20" y="50" width="330" height="30" fill="var(--accent3)" opacity=".35"/>
+  <rect x="350" y="50" width="130" height="30" fill="var(--accent2)" opacity=".3"/>
+  <rect x="480" y="50" width="120" height="30" fill="var(--warn)" opacity=".3"/>
+  <rect x="600" y="50" width="140" height="30" fill="var(--accent)" opacity=".3"/>
+  <text class="small" x="185" y="70" text-anchor="middle">ordinary patches</text>
+  <text class="small" x="415" y="70" text-anchor="middle">worst measured 0.594</text>
+  <text class="small" x="540" y="70" text-anchor="middle">3.1 dB margin</text>
+  <text class="small" x="670" y="70" text-anchor="middle">soft clip 0.85 → 1.15</text>
+  <text class="small" x="20" y="100">0</text>
+  <text class="small" x="600" y="100" text-anchor="middle">knee 0.85</text>
+  <text class="small" x="740" y="100" text-anchor="end">cap 1.15</text>
+  <text class="ttl" x="20" y="30">Output headroom</text>
+</svg>
+</figure>
+
+<h2 id="leds">12 · LEDs</h2>
+<ul class="tight">
+  <li><b>LED 1</b> follows INHARM.</li>
+  <li><b>LEDs 2–9</b> normally show band level. A band whose slider is up but whose partials have all
+      passed Nyquist <b>pulses dimly</b> — “turned down” and “nothing left to play” must not look
+      alike.</li>
+  <li>Touch WIN START or WIN SIZE and the row flips to a <b>window peek</b> — the lit LEDs show where
+      the shaper window sits over the bank, with its edges partly lit — until 1.5 s after you stop
+      moving the knob.</li>
+</ul>
+
+<h2 id="cv">13 · CV, calibration and limits</h2>
+
+<h3>The jacks</h3>
+<table>
+<tr><th>Jack</th><th>Goes to</th><th>Notes</th></tr>
+<tr><td class="k">Top row × 9</td><td>INHARM + the eight band sliders</td><td>summed with the slider, then clamped</td></tr>
+<tr><td class="k">V/O</td><td>pitch</td><td>calibrated 1 V/oct; summed with COARSE and FINE</td></tr>
+<tr><td class="k">START / SIZE</td><td>window start / width</td><td>summed with the knob</td></tr>
+<tr><td class="k">CLUSTERS</td><td>knob 4</td><td><b>the exception:</b> CLUSTER sums it with the knob; SHEPARD takes the <em>rate</em> from the knob and moves φ by this jack's <em>change</em></td></tr>
+<tr><td class="k">DENSITY</td><td>knob 5</td><td>summed with the knob</td></tr>
+<tr><td class="k">ODD ONLY</td><td>parity</td><td>gate input, digital: high = odd partials only</td></tr>
+</table>
+
+<h3>Calibration</h3>
+<p>Three steps, one stored record. Power up with <b>INHARM fully up + left switch up + right switch
+down</b>, then flip the right switch to capture each step:</p>
+<ol>
+  <li>1 V patched to V/OCT</li>
+  <li>3 V patched to V/OCT</li>
+  <li><b>everything unpatched</b> — this captures the CV jack nulls</li>
+</ol>
+<p>Step 3 matters as much as the pitch fit: the summing jacks idle around −0.02 rather than 0, and
+since the firmware adds jack to knob and clamps, that bias ate the top 2.5% of every affected
+control's travel — which is why an uncalibrated unit can't quite reach a single cluster at full CW.</p>
+
+<div class="warn"><b>Bench-testing gotcha:</b> on USB power alone the Daisy's analog domain is dead —
+CV inputs rail at ~0.99 and audio is silent, while the pots and sliders keep working normally. Always
+test CV and audio with rack power connected (USB may stay attached for the serial log).</div>
+
+<h3>Limits</h3>
+<ul class="tight">
+  <li>96 partials, always running; f0 clamped to 8 Hz – 6 kHz.</li>
+  <li>At 48 kHz, partials above Nyquist fade out over the top 5% of the range.</li>
+  <li>Phases are randomised at power-up and never reset — the module has no “retrigger”.</li>
+</ul>
+
+<h2 id="recipes">14 · Patch recipes</h2>
+
+<div class="recipe">
+<h3>The endless glissando</h3>
+<ul class="tight">
+  <li>Left switch <b>up</b> (SHEPARD)</li>
+  <li>WIN START fully <b>CCW</b> — window starts at partial 1</li>
+  <li>WIN SIZE fully <b>CW</b> — window covers the whole bank</li>
+  <li>WIN DUCK fully <b>CCW</b> — unity gain</li>
+  <li><b>All band sliders up.</b> A drawn hump does <em>not</em> work here: the sliders control fill as
+      well as level, so pulling the top band down thins it to one partial instead of fading it. The
+      engine fades the ends for you.</li>
+  <li><b>Ramp LFO into the CLUSTERS jack</b>, knob near centre, moderate depth, a few seconds per cycle.</li>
+</ul>
+<p>The LFO <em>is</em> the illusion — without it there is only a static shifted spectrum. Either tilt
+works; ODD ONLY doubles the cycle length.</p>
+</div>
+
+<div class="recipe">
+<h3>Skeleton comb</h3>
+<p>All band sliders at <b>half</b>: exactly eight partials, one per band, their positions chosen by the
+six FADE TILT pots (CCW = the band's lowest partial, centre = its middle, CW = its highest). Then
+sweep <b>SHIFT</b> to scan the whole shape up and down the harmonic series without retuning anything.</p>
+</div>
+
+<div class="recipe">
+<h3>Metallic body, stable pitch</h3>
+<p>Left switch <b>down</b> (CLUSTER). Set WIN START above the fundamental so partials 1–3 stay
+anchored; WIN SIZE wide. Knob 4 a little CW of centre (small clusters), knob 5 up into the 0.9+ zone.
+Add INHARM to taste. The anchored low partials hold the note while everything above beats and rings.</p>
+</div>
+
+<h2 id="ref">15 · Reference numbers</h2>
+<div class="scroll">
+<table>
+<tr><th>Quantity</th><th>Value</th></tr>
+<tr><td class="k">Partials</td><td>96</td></tr>
+<tr><td class="k">Bands</td><td>8, geometric; start at partials ≈1, 2, 4, 7, 13, 23, 41, 73</td></tr>
+<tr><td class="k">COARSE range</td><td>20 – 200 Hz (3.32 octaves, exponential)</td></tr>
+<tr><td class="k">Effective f0 clamp</td><td>8 Hz – 6 kHz</td></tr>
+<tr><td class="k">FINE</td><td>±1 semitone, deadzone at noon</td></tr>
+<tr><td class="k">SHIFT</td><td>±1 octave of envelope/comb position, centre neutral</td></tr>
+<tr><td class="k">Window</td><td>start and width exponential over 1…96 partials; 1-partial tapered shoulders</td></tr>
+<tr><td class="k">Cluster size</td><td>1 → the whole window (a single cluster), exponential from noon</td></tr>
+<tr><td class="k">Density</td><td>0 → 0.995, with a 2% deadzone at CCW</td></tr>
+<tr><td class="k">Glissando rate</td><td>0.01 → 10 partials/s, exponential from noon; illusion holds to ≈0.5 wrap/s</td></tr>
+<tr><td class="k">Shepard end fade</td><td>4 partials at each end of the window</td></tr>
+<tr><td class="k">Stereo knots</td><td>8% mono · 50% scatter · 75% orbit · then motion</td></tr>
+<tr><td class="k">Orbit rate</td><td>0.04 → 0.20 rev/s; odd subset reverses at full CW</td></tr>
+<tr><td class="k">Output level</td><td>≈ −19 dBFS RMS with all sliders up (DARK)</td></tr>
+<tr><td class="k">Soft clip</td><td>linear below 0.85, hard cap at 1.15</td></tr>
+</table>
+</div>
+
+<hr>
+<p class="small" style="color:var(--muted);font-size:.85rem">
+Fox Tail — a Time Machine descendent. Olivia Artz &gt; Harry Richardson &gt; DivKid Discord &gt; DogsizedDragonflies.<br>
+Panel art: <code>panel/Fox-Tail.svg</code>. Engine internals and rationale: <code>docs/claude/control-maps.md</code>.
+</p>
+
+</div>
+</body>
+</html>
